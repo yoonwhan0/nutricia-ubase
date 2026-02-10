@@ -116,6 +116,8 @@
     let allItems = [];
     let paginationPage = 1;
     let searchFilters = { name: '', contact: '', customsCode: '' };
+    let metaSnaps = {};
+    let realtimeUnsub = [];
 
     function normalizePhone(v) {
       return (v || '').replace(/\D/g, '');
@@ -139,20 +141,14 @@
       onValue(dbRef(db, '.info/connected'), (snap) => setStatus(snap.val() === true), () => setStatus(false));
     }
 
-    async function doLoad() {
+    function doLoad() {
       if (!db) {
         listEl.innerHTML = '<div class="msg error">Firebase가 초기화되지 않았습니다.</div>';
         return;
       }
-      listEl.innerHTML = '<p class="msg info">4개 프로젝트 데이터 로드 중…</p>';
-      try {
-        allItems = await fetchAllProjectsMeta();
-        paginationPage = 1;
-        renderTable();
-      } catch (err) {
-        console.error(err);
-        listEl.innerHTML = '<div class="msg error">로드 실패: ' + (err.message || err) + '</div>';
-      }
+      listEl.innerHTML = '<p class="msg info">4개 프로젝트 데이터 로드 중… (실시간 반영)</p>';
+      metaSnaps = {};
+      subscribeRealtime();
     }
 
     function handleUnlock() {
@@ -190,15 +186,12 @@
       return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
-    async function fetchAllProjectsMeta() {
-      const rootRef = dbRef(db);
-      const snaps = await Promise.all(
-        PREFIXES.map((prefix) => get(child(rootRef, prefix + '/submissions_meta')))
-      );
+    /** metaSnaps(prefix->snap)에서 목록 배열 생성 → 실시간 반영용 */
+    function buildItemsFromMetaSnaps() {
       const items = [];
-      snaps.forEach((snap, idx) => {
-        if (!snap.exists()) return;
-        const prefix = PREFIXES[idx];
+      PREFIXES.forEach((prefix, idx) => {
+        const snap = metaSnaps[prefix];
+        if (!snap || !snap.exists()) return;
         snap.forEach((dateSnap) => {
           const dateKey = dateSnap.key;
           if (!/^\d{8}$/.test(dateKey)) return;
@@ -217,6 +210,25 @@
       items.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
       items.forEach((it, i) => { it._globalSeq = i + 1; });
       return items;
+    }
+
+    function applyRealtimeAndRender() {
+      if (Object.keys(metaSnaps).length !== PREFIXES.length) return;
+      allItems = buildItemsFromMetaSnaps();
+      paginationPage = 1;
+      renderTable();
+    }
+
+    /** 4개 프로젝트 submissions_meta 실시간 구독 → 변경 시 즉시 반영 */
+    function subscribeRealtime() {
+      realtimeUnsub.forEach((u) => { try { u(); } catch (_) {} });
+      realtimeUnsub = [];
+      realtimeUnsub = PREFIXES.map((prefix) => {
+        return onValue(dbRef(db, prefix + '/submissions_meta'), (snap) => {
+          metaSnaps[prefix] = snap;
+          applyRealtimeAndRender();
+        });
+      });
     }
 
     function getFilteredItems() {
@@ -387,10 +399,14 @@
 
     async function saveFlagsOnly(row) {
       const id = row.getAttribute('data-id');
-      const dateKey = row.getAttribute('data-date-key') || '';
+      const dateKey = (row.getAttribute('data-date-key') || '').trim();
       const isLegacy = row.getAttribute('data-legacy') === '1';
-      const prefix = row.getAttribute('data-prefix') || '';
+      const prefix = (row.getAttribute('data-prefix') || '').trim();
       if (!id || !prefix || !db) return;
+      if (!isLegacy && !dateKey) {
+        alert('저장할 수 없습니다. 접수 정보(dateKey)가 없습니다.');
+        return;
+      }
       enforceSingleFlag(row);
       const refundDone = !!row.querySelector('.list-cb-refund')?.checked;
       const exchangeDone = !!row.querySelector('.list-cb-exchange')?.checked;
@@ -400,13 +416,14 @@
       const metaPath = prefix + '/submissions_meta/' + dateKey + '/' + id;
       try {
         await update(dbRef(db, subPath), payload);
-        try { await update(dbRef(db, metaPath), payload); } catch (_) {}
+        await update(dbRef(db, metaPath), payload);
         const it = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
         if (it) {
           it.refundDone = refundDone;
           it.exchangeDone = exchangeDone;
           it.invalidInfo = invalidInfo;
         }
+        renderTable();
       } catch (err) {
         console.error('저장 오류:', err);
         alert('저장 실패: ' + (err.message || err));
@@ -419,21 +436,16 @@
       tbody.querySelectorAll('tr').forEach((row) => {
         row.querySelectorAll('.list-cb-refund, .list-cb-exchange, .list-cb-invalid').forEach((cb) => {
           cb.addEventListener('change', () => {
-            if (row._cbApplying) {
-              row._cbApplying = false;
-              saveFlagsOnly(row);
-              return;
-            }
             const field = cb.getAttribute('data-field');
             if (cb.checked) {
               const label = field === 'refundDone' ? '환불' : (field === 'exchangeDone' ? '교환' : '잘못된 정보');
               const info = getRowCustomerInfo(row);
               cb.checked = false;
               if (!confirm(info + '\n\n' + label + ' 체크가 맞습니까?\n\n확인 시 체크 후 저장됩니다.')) return;
-              row._cbApplying = true;
               row.querySelector('.list-cb-refund').checked = (cb === row.querySelector('.list-cb-refund'));
               row.querySelector('.list-cb-exchange').checked = (cb === row.querySelector('.list-cb-exchange'));
               row.querySelector('.list-cb-invalid').checked = (cb === row.querySelector('.list-cb-invalid'));
+              saveFlagsOnly(row);
               return;
             }
             saveFlagsOnly(row);
