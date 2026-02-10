@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>압타밀 통합 접수 조회 (4개 사이트)</title>
+  <link rel="stylesheet" href="nutricia-x9fQ2kM7-1/css/style.css">
+  <style>
+    .admin-wrap { max-width: 100%; margin: 0 auto; }
+    .admin-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+    .admin-header h1 { margin: 0; font-size: 18px; }
+    .admin-table-wrapper { overflow-x: auto; margin-top: 12px; }
+    .admin-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .admin-table th, .admin-table td { border: 1px solid #ddd; padding: 2px 4px; text-align: left; vertical-align: middle; white-space: nowrap; }
+    .admin-table th { background: #f0f0f0; position: sticky; top: 0; z-index: 1; }
+    .admin-table .cell-text { display: inline-block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .admin-table .cell-seq { text-align: center; font-weight: 600; }
+    .admin-table .cell-project { text-align: center; }
+    .admin-pagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; }
+    .admin-page-info { font-size: 12px; color: #555; }
+    .status-indicator { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #ccc; display: inline-block; }
+    .status-dot.ok { background: #28a745; }
+    .status-dot.off { background: #dc3545; }
+    .btn-load { margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <div class="admin-lock-backdrop" id="adminLock">
+    <div class="admin-lock-modal">
+      <h2>통합 접수 조회 (관리자 전용)</h2>
+      <p>접근 비밀번호를 입력해 주세요.</p>
+      <input type="password" class="admin-lock-input" id="adminPassword" placeholder="비밀번호" autocomplete="off">
+      <div class="admin-lock-error" id="adminLockError"></div>
+      <button type="button" class="btn btn-primary" id="adminUnlockBtn" style="width:100%;">접속하기</button>
+    </div>
+  </div>
+
+  <div class="admin-wrap">
+    <div id="listView" style="display:none;">
+      <div class="admin-header">
+        <h1>압타밀 통합 접수 조회 (4개 사이트 · 조회 + 상태 체크만)</h1>
+        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+          <div class="status-indicator">
+            <span class="status-dot" id="statusDotAdmin"></span>
+            <span id="statusTextAdmin">서버 연결 확인 중…</span>
+          </div>
+        </div>
+      </div>
+      <div class="detail-section" style="margin-bottom: 12px;">
+        <h2 style="font-size: 14px; margin: 0 0 8px 0;">고객 조회</h2>
+        <div class="admin-search" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+          <input type="text" id="searchName" placeholder="이름" style="padding: 6px 8px; font-size: 12px;">
+          <input type="text" id="searchContact" placeholder="전화번호" style="padding: 6px 8px; font-size: 12px;">
+          <input type="text" id="searchCustoms" placeholder="통관번호(개인통관부호)" style="padding: 6px 8px; font-size: 12px;">
+          <button type="button" class="btn btn-primary" id="searchBtn" style="width: auto;">검색</button>
+          <button type="button" class="btn" id="searchResetBtn" style="width: auto; background: #777; color: #fff;">초기화</button>
+        </div>
+      </div>
+      <p class="msg info">4개 사이트 접수를 한 화면에서 조회합니다. 환불/교환/잘못된정보 체크박스만 변경 가능하며, 상세 수정은 각 사이트 어드민에서 하세요.</p>
+      <div id="listMessage"></div>
+      <div id="submissionList"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+    import {
+      getDatabase,
+      ref as dbRef,
+      get,
+      child,
+      onValue,
+      update
+    } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+
+    const ADMIN_KEY = '@@@@';
+
+    const PREFIXES = ['nutricia-x9fQ2kM7-1', 'nutricia-aL4pZ8Tq-2', 'nutricia-nu7VnCwR3H-3', 'nutricia-MK2rP9dS-4'];
+    const PROJECT_LABELS = ['1', '2', '3', '4'];
+    const DETAIL_BASE_URLS = [
+      'nutricia-x9fQ2kM7-1/admin_detail.html',
+      'nutricia-aL4pZ8Tq-2/admin_detail.html',
+      'nutricia-nu7VnCwR3H-3/admin_detail.html',
+      'nutricia-MK2rP9dS-4/admin_detail.html'
+    ];
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCxNwnAzMn0JUkHGDXgY4taTPJYeABDohg",
+      authDomain: "eibe-nutricia.firebaseapp.com",
+      databaseURL: "https://eibe-nutricia-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "eibe-nutricia",
+      storageBucket: "eibe-nutricia.firebasestorage.app",
+      messagingSenderId: "605906618980",
+      appId: "1:605906618980:web:d947540696a573c4856d71"
+    };
+
+    let app, db;
+    try {
+      app = initializeApp(firebaseConfig);
+      db = getDatabase(app);
+    } catch (err) {
+      console.error('Firebase 초기화 오류:', err);
+    }
+
+    const adminLock = document.getElementById('adminLock');
+    const adminKeyInput = document.getElementById('adminPassword');
+    const adminLockError = document.getElementById('adminLockError');
+    const adminUnlockBtn = document.getElementById('adminUnlockBtn');
+    const listEl = document.getElementById('submissionList');
+    const listView = document.getElementById('listView');
+    const statusDotAdmin = document.getElementById('statusDotAdmin');
+    const statusTextAdmin = document.getElementById('statusTextAdmin');
+    const searchNameInput = document.getElementById('searchName');
+    const searchContactInput = document.getElementById('searchContact');
+    const searchCustomsInput = document.getElementById('searchCustoms');
+    const searchBtn = document.getElementById('searchBtn');
+    const searchResetBtn = document.getElementById('searchResetBtn');
+
+    const PAGE_SIZE = 30;
+    let allItems = [];
+    let paginationPage = 1;
+    let searchFilters = { name: '', contact: '', customsCode: '' };
+
+    function normalizePhone(v) {
+      return (v || '').replace(/\D/g, '');
+    }
+    function contactMatches(storedContact, searchContact) {
+      const s = normalizePhone(storedContact);
+      const q = normalizePhone(searchContact);
+      if (!q) return true;
+      if (!s) return false;
+      return s === q || s === '82' + q || s.replace(/^82/, '') === q;
+    }
+
+    function setStatus(connected) {
+      if (!statusDotAdmin || !statusTextAdmin) return;
+      statusDotAdmin.classList.remove('ok', 'off');
+      statusDotAdmin.classList.add(connected ? 'ok' : 'off');
+      statusTextAdmin.textContent = connected ? '서버 연결 정상' : '서버 연결 안 됨';
+    }
+
+    if (db) {
+      onValue(dbRef(db, '.info/connected'), (snap) => setStatus(snap.val() === true), () => setStatus(false));
+    }
+
+    async function doLoad() {
+      if (!db) {
+        listEl.innerHTML = '<div class="msg error">Firebase가 초기화되지 않았습니다.</div>';
+        return;
+      }
+      listEl.innerHTML = '<p class="msg info">4개 프로젝트 데이터 로드 중…</p>';
+      try {
+        allItems = await fetchAllProjectsMeta();
+        paginationPage = 1;
+        renderTable();
+      } catch (err) {
+        console.error(err);
+        listEl.innerHTML = '<div class="msg error">로드 실패: ' + (err.message || err) + '</div>';
+      }
+    }
+
+    function handleUnlock() {
+      const val = (adminKeyInput.value || '').trim();
+      if (val === ADMIN_KEY) {
+        if (adminLock) adminLock.style.display = 'none';
+        adminLockError.textContent = '';
+        listView.style.display = 'block';
+        doLoad();
+      } else {
+        adminLockError.textContent = '비밀번호가 올바르지 않습니다.';
+      }
+    }
+    adminUnlockBtn.addEventListener('click', handleUnlock);
+    adminKeyInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') handleUnlock(); });
+
+    function formatDate(t) {
+      if (!t) return '-';
+      const d = typeof t === 'number' ? new Date(t) : new Date(t);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ' ' +
+        String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    }
+
+    function escapeAttr(s) {
+      if (s == null) return '';
+      return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function escapeHtml(s) {
+      if (s == null) return '';
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    async function fetchAllProjectsMeta() {
+      const rootRef = dbRef(db);
+      const snaps = await Promise.all(
+        PREFIXES.map((prefix) => get(child(rootRef, prefix + '/submissions_meta')))
+      );
+      const items = [];
+      snaps.forEach((snap, idx) => {
+        if (!snap.exists()) return;
+        const prefix = PREFIXES[idx];
+        snap.forEach((dateSnap) => {
+          const dateKey = dateSnap.key;
+          if (!/^\d{8}$/.test(dateKey)) return;
+          dateSnap.forEach((inner) => {
+            items.push({
+              _prefix: prefix,
+              _projectIndex: idx + 1,
+              id: inner.key,
+              _dateKey: dateKey,
+              _isLegacy: false,
+              ...inner.val()
+            });
+          });
+        });
+      });
+      items.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      items.forEach((it, i) => { it._globalSeq = i + 1; });
+      return items;
+    }
+
+    function getFilteredItems() {
+      if (!searchFilters.name && !searchFilters.contact && !searchFilters.customsCode) return allItems;
+      const nameKeyword = (searchFilters.name || '').trim().toLowerCase();
+      const contactKeyword = (searchFilters.contact || '').trim();
+      const customsKeyword = (searchFilters.customsCode || '').trim().toUpperCase();
+      return allItems.filter((d) => {
+        let ok = true;
+        if (nameKeyword) ok = ok && (d.name || '').toLowerCase().includes(nameKeyword);
+        if (contactKeyword) ok = ok && contactMatches(d.contact, searchFilters.contact);
+        if (customsKeyword) ok = ok && (d.customsCode || '').toUpperCase().includes(customsKeyword);
+        return ok;
+      });
+    }
+
+    if (searchBtn) searchBtn.addEventListener('click', () => {
+      searchFilters = {
+        name: (searchNameInput && searchNameInput.value) ? searchNameInput.value.trim() : '',
+        contact: (searchContactInput && searchContactInput.value) ? searchContactInput.value.trim() : '',
+        customsCode: (searchCustomsInput && searchCustomsInput.value) ? searchCustomsInput.value.trim() : ''
+      };
+      paginationPage = 1;
+      renderTable();
+    });
+    if (searchResetBtn) searchResetBtn.addEventListener('click', () => {
+      if (searchNameInput) searchNameInput.value = '';
+      if (searchContactInput) searchContactInput.value = '';
+      if (searchCustomsInput) searchCustomsInput.value = '';
+      searchFilters = { name: '', contact: '', customsCode: '' };
+      paginationPage = 1;
+      renderTable();
+    });
+
+    function getUniqueCodesArray(d) {
+      let arr = d.uniqueCodesData;
+      if (Array.isArray(arr)) return arr;
+      const codes = Array.isArray(d.uniqueCodes) ? d.uniqueCodes : (d.uniqueCode ? [d.uniqueCode] : []);
+      return codes.map(code => ({ productName: '', batchNumber: '', uniqueCode: code || '' }));
+    }
+
+    function renderTable() {
+      const filteredItems = getFilteredItems();
+      if (!filteredItems.length) {
+        listEl.innerHTML = '<p class="msg info">' + (allItems.length ? '조건에 맞는 접수가 없습니다.' : '접수된 건이 없습니다.') + '</p>';
+        return;
+      }
+      const total = filteredItems.length;
+      const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+      if (paginationPage < 1) paginationPage = 1;
+      if (paginationPage > totalPages) paginationPage = totalPages;
+      const start = (paginationPage - 1) * PAGE_SIZE;
+      const pageItems = filteredItems.slice(start, start + PAGE_SIZE);
+
+      const headerRow =
+        '<th class="cell-seq">A 순번</th>' +
+        '<th class="cell-project">B 프로젝트</th>' +
+        '<th>사진 보기</th>' +
+        '<th>이름</th><th>연락처</th><th>주소</th><th>상세 주소</th><th>개인통관부호</th>' +
+        '<th>접수ID</th><th>접수일시</th>' +
+        '<th>환불</th><th>교환</th><th>잘못된정보</th>' +
+        '<th>은행</th><th>계좌번호</th><th>계좌명</th><th>구매금액</th><th>수량(캔수)</th>' +
+        '<th>제품명(1)</th><th>제조번호(1)</th><th>고유번호(1)</th>' +
+        '<th>제품명(2)</th><th>제조번호(2)</th><th>고유번호(2)</th>' +
+        '<th>제품명(3)</th><th>제조번호(3)</th><th>고유번호(3)</th>' +
+        '<th>제품명(4)</th><th>제조번호(4)</th><th>고유번호(4)</th>' +
+        '<th>제품명(5)</th><th>제조번호(5)</th><th>고유번호(5)</th>' +
+        '<th>제품명(6)</th><th>제조번호(6)</th><th>고유번호(6)</th>' +
+        '<th>제품명(7)</th><th>제조번호(7)</th><th>고유번호(7)</th>' +
+        '<th>제품명(8)</th><th>제조번호(8)</th><th>고유번호(8)</th>' +
+        '<th>제품명(9)</th><th>제조번호(9)</th><th>고유번호(9)</th>' +
+        '<th>제품명(10)</th><th>제조번호(10)</th><th>고유번호(10)</th>' +
+        '<th>제품명(11)</th><th>제조번호(11)</th><th>고유번호(11)</th>' +
+        '<th>제품명(12)</th><th>제조번호(12)</th><th>고유번호(12)</th>';
+
+      let rowsHtml = '';
+      pageItems.forEach((d) => {
+        const seq = d._globalSeq;
+        const proj = PROJECT_LABELS[d._projectIndex - 1] || '';
+        const prefix = d._prefix;
+        const dateKey = d._dateKey || '';
+        const isLegacy = !!d._isLegacy;
+        const detailUrl = DETAIL_BASE_URLS[d._projectIndex - 1] + '?id=' + encodeURIComponent(d.id) + '&dateKey=' + encodeURIComponent(dateKey) + '&legacy=' + (isLegacy ? '1' : '0') + '&photosOnly=1';
+
+        const u = getUniqueCodesArray(d);
+        const u12 = [];
+        for (let i = 0; i < 12; i++) u12.push(u[i] || { productName: '', batchNumber: '', uniqueCode: '' });
+
+        const refundC = d.refundDone ? ' checked' : '';
+        const exchangeC = d.exchangeDone ? ' checked' : '';
+        const invalidC = d.invalidInfo ? ' checked' : '';
+
+        rowsHtml += '<tr data-id="' + escapeAttr(d.id) + '" data-date-key="' + escapeAttr(dateKey) + '" data-legacy="' + (isLegacy ? '1' : '0') + '" data-prefix="' + escapeAttr(prefix) + '" data-project-index="' + d._projectIndex + '">';
+        rowsHtml += '<td class="cell-seq">' + seq + '</td>';
+        rowsHtml += '<td class="cell-project">' + proj + '</td>';
+        rowsHtml += '<td><a href="' + detailUrl + '" target="_blank" rel="noopener" class="btn btn-primary" style="font-size:11px;padding:2px 6px;">사진 보기</a></td>';
+        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.name || '-') + '</span></td>';
+        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.contact || '-') + '</span></td>';
+        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.address || '-') + '</span></td>';
+        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.addressDetail || '-') + '</span></td>';
+        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.customsCode || '-') + '</span></td>';
+        rowsHtml += '<td>' + escapeHtml(d.id || '-') + '</td>';
+        rowsHtml += '<td>' + formatDate(d.createdAt) + '</td>';
+        rowsHtml += '<td><label><input type="checkbox" class="list-cb-refund" data-field="refundDone"' + refundC + '> 환불</label></td>';
+        rowsHtml += '<td><label><input type="checkbox" class="list-cb-exchange" data-field="exchangeDone"' + exchangeC + '> 교환</label></td>';
+        rowsHtml += '<td><label><input type="checkbox" class="list-cb-invalid" data-field="invalidInfo"' + invalidC + '> 잘못</label></td>';
+        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.bankName || '-') + '</span></td>';
+        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.bankAccountNumber || '-') + '</span></td>';
+        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.bankAccountName || '-') + '</span></td>';
+        rowsHtml += '<td><span class="cell-text">' + escapeHtml(String(d.purchaseAmount || '')) + '</span></td>';
+        rowsHtml += '<td><span class="cell-text">' + (d.quantity != null ? d.quantity : '-') + '</span></td>';
+        for (let i = 0; i < 12; i++) {
+          rowsHtml += '<td><span class="cell-text">' + escapeHtml(u12[i].productName || '-') + '</span></td>';
+          rowsHtml += '<td><span class="cell-text">' + escapeHtml(u12[i].batchNumber || '-') + '</span></td>';
+          rowsHtml += '<td><span class="cell-text">' + escapeHtml(u12[i].uniqueCode || '-') + '</span></td>';
+        }
+        rowsHtml += '</tr>';
+      });
+
+      const tableHtml =
+        '<div class="admin-table-wrapper">' +
+          '<table class="admin-table">' +
+            '<thead><tr>' + headerRow + '</tr></thead>' +
+            '<tbody>' + rowsHtml + '</tbody>' +
+          '</table>' +
+        '</div>';
+      const paginationHtml =
+        '<div class="admin-pagination">' +
+          '<button type="button" class="btn btn-primary admin-page-btn" data-page="' + (paginationPage - 1) + '" ' + (paginationPage <= 1 ? 'disabled' : '') + '>이전</button>' +
+          '<span class="admin-page-info">페이지 ' + paginationPage + ' / ' + totalPages + ' (총 ' + total + '건)</span>' +
+          '<button type="button" class="btn btn-primary admin-page-btn" data-page="' + (paginationPage + 1) + '" ' + (paginationPage >= totalPages ? 'disabled' : '') + '>다음</button>' +
+        '</div>';
+
+      listEl.innerHTML = tableHtml + paginationHtml;
+      const infoP = document.createElement('p');
+      infoP.className = 'msg info';
+      infoP.textContent = (searchFilters.name || searchFilters.contact || searchFilters.customsCode ? '검색 결과 ' + total + '건 (전체 ' + allItems.length + '건 중)' : '전체 ' + allItems.length + '건') + ', 페이지당 30건. 환불/교환/잘못된정보만 체크 변경 가능.';
+      listEl.insertBefore(infoP, listEl.firstChild);
+
+      listEl.querySelectorAll('.admin-page-btn').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const targetPage = Number(btn.getAttribute('data-page'));
+          if (!targetPage || targetPage === paginationPage) return;
+          paginationPage = targetPage;
+          renderTable();
+        });
+      });
+
+      attachCheckboxListeners();
+    }
+
+    function enforceSingleFlag(row) {
+      const cbRefund = row.querySelector('.list-cb-refund');
+      const cbExchange = row.querySelector('.list-cb-exchange');
+      const cbInvalid = row.querySelector('.list-cb-invalid');
+      if (cbRefund && cbRefund.checked) { if (cbExchange) cbExchange.checked = false; if (cbInvalid) cbInvalid.checked = false; }
+      else if (cbExchange && cbExchange.checked) { if (cbRefund) cbRefund.checked = false; if (cbInvalid) cbInvalid.checked = false; }
+      else if (cbInvalid && cbInvalid.checked) { if (cbRefund) cbRefund.checked = false; if (cbExchange) cbExchange.checked = false; }
+    }
+
+    function getRowCustomerInfo(r) {
+      const tds = r.querySelectorAll('td');
+      const name = (tds[3] && tds[3].textContent) ? tds[3].textContent.trim() : '';
+      const contact = (tds[4] && tds[4].textContent) ? tds[4].textContent.trim() : '';
+      return (name || contact) ? '이 고객 [' + name + ' / ' + contact + ']' : '이 고객';
+    }
+
+    async function saveFlagsOnly(row) {
+      const id = row.getAttribute('data-id');
+      const dateKey = row.getAttribute('data-date-key') || '';
+      const isLegacy = row.getAttribute('data-legacy') === '1';
+      const prefix = row.getAttribute('data-prefix') || '';
+      if (!id || !prefix || !db) return;
+      enforceSingleFlag(row);
+      const refundDone = !!row.querySelector('.list-cb-refund')?.checked;
+      const exchangeDone = !!row.querySelector('.list-cb-exchange')?.checked;
+      const invalidInfo = !!row.querySelector('.list-cb-invalid')?.checked;
+      const payload = { refundDone, exchangeDone, invalidInfo };
+      const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
+      const metaPath = prefix + '/submissions_meta/' + dateKey + '/' + id;
+      try {
+        await update(dbRef(db, subPath), payload);
+        try { await update(dbRef(db, metaPath), payload); } catch (_) {}
+        const it = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
+        if (it) {
+          it.refundDone = refundDone;
+          it.exchangeDone = exchangeDone;
+          it.invalidInfo = invalidInfo;
+        }
+      } catch (err) {
+        console.error('저장 오류:', err);
+        alert('저장 실패: ' + (err.message || err));
+      }
+    }
+
+    function attachCheckboxListeners() {
+      const tbody = listEl.querySelector('tbody');
+      if (!tbody) return;
+      tbody.querySelectorAll('tr').forEach((row) => {
+        row.querySelectorAll('.list-cb-refund, .list-cb-exchange, .list-cb-invalid').forEach((cb) => {
+          cb.addEventListener('change', () => {
+            const field = cb.getAttribute('data-field');
+            if (cb.checked) {
+              const label = field === 'refundDone' ? '환불' : (field === 'exchangeDone' ? '교환' : '잘못된 정보');
+              const info = getRowCustomerInfo(row);
+              if (!confirm(info + '\n\n' + label + ' 체크가 맞습니까?\n\n확인 시 체크 후 저장됩니다.')) {
+                cb.checked = false;
+                return;
+              }
+            }
+            saveFlagsOnly(row);
+          });
+        });
+      });
+    }
+  </script>
+</body>
+</html>
