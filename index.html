@@ -169,6 +169,10 @@
     adminUnlockBtn.addEventListener('click', handleUnlock);
     adminKeyInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') handleUnlock(); });
 
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && listView && listView.style.display !== 'none') doLoad();
+    });
+
     function formatDate(t) {
       if (!t) return '-';
       const d = typeof t === 'number' ? new Date(t) : new Date(t);
