@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>압타밀 통합 접수 조회 (4개 사이트)</title>
-  <link rel="stylesheet" href="nutricia-x9fQ2kM7-1/css/style.css">
+  <link rel="stylesheet" href="css/style.css">
   <style>
     .admin-wrap { max-width: 100%; margin: 0 auto; }
     .admin-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
@@ -74,16 +74,11 @@
       update
     } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
-    const ADMIN_KEY = '@@@@';
+    const ADMIN_KEY = 'ubase2026@@@@';
 
     const PREFIXES = ['nutricia-x9fQ2kM7-1', 'nutricia-aL4pZ8Tq-2', 'nutricia-nu7VnCwR3H-3', 'nutricia-MK2rP9dS-4'];
     const PROJECT_LABELS = ['1', '2', '3', '4'];
-    const DETAIL_BASE_URLS = [
-      'nutricia-x9fQ2kM7-1/admin_detail.html',
-      'nutricia-aL4pZ8Tq-2/admin_detail.html',
-      'nutricia-nu7VnCwR3H-3/admin_detail.html',
-      'nutricia-MK2rP9dS-4/admin_detail.html'
-    ];
+    const PHOTO_VIEW_URL = 'photo_view.html';
 
     const firebaseConfig = {
       apiKey: "AIzaSyCxNwnAzMn0JUkHGDXgY4taTPJYeABDohg",
@@ -300,7 +295,7 @@
         const prefix = d._prefix;
         const dateKey = d._dateKey || '';
         const isLegacy = !!d._isLegacy;
-        const detailUrl = DETAIL_BASE_URLS[d._projectIndex - 1] + '?id=' + encodeURIComponent(d.id) + '&dateKey=' + encodeURIComponent(dateKey) + '&legacy=' + (isLegacy ? '1' : '0') + '&photosOnly=1';
+        const detailUrl = PHOTO_VIEW_URL + '?id=' + encodeURIComponent(d.id) + '&dateKey=' + encodeURIComponent(dateKey) + '&legacy=' + (isLegacy ? '1' : '0') + '&prefix=' + encodeURIComponent(prefix);
 
         const u = getUniqueCodesArray(d);
         const u12 = [];
