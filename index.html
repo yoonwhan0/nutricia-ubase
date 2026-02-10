@@ -415,14 +415,22 @@
       tbody.querySelectorAll('tr').forEach((row) => {
         row.querySelectorAll('.list-cb-refund, .list-cb-exchange, .list-cb-invalid').forEach((cb) => {
           cb.addEventListener('change', () => {
+            if (row._cbApplying) {
+              row._cbApplying = false;
+              saveFlagsOnly(row);
+              return;
+            }
             const field = cb.getAttribute('data-field');
             if (cb.checked) {
               const label = field === 'refundDone' ? '환불' : (field === 'exchangeDone' ? '교환' : '잘못된 정보');
               const info = getRowCustomerInfo(row);
-              if (!confirm(info + '\n\n' + label + ' 체크가 맞습니까?\n\n확인 시 체크 후 저장됩니다.')) {
-                cb.checked = false;
-                return;
-              }
+              cb.checked = false;
+              if (!confirm(info + '\n\n' + label + ' 체크가 맞습니까?\n\n확인 시 체크 후 저장됩니다.')) return;
+              row._cbApplying = true;
+              row.querySelector('.list-cb-refund').checked = (cb === row.querySelector('.list-cb-refund'));
+              row.querySelector('.list-cb-exchange').checked = (cb === row.querySelector('.list-cb-exchange'));
+              row.querySelector('.list-cb-invalid').checked = (cb === row.querySelector('.list-cb-invalid'));
+              return;
             }
             saveFlagsOnly(row);
           });
