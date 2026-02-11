@@ -23,9 +23,42 @@
     .status-dot.ok { background: #28a745; }
     .status-dot.off { background: #dc3545; }
     .btn-load { margin-bottom: 8px; }
+    .cell-tooltip-bubble {
+      position: fixed;
+      z-index: 99999;
+      max-width: 320px;
+      padding: 10px 14px;
+      background: #2d2d2d;
+      color: #fff;
+      border-radius: 10px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.15s ease, visibility 0.15s ease;
+    }
+    .cell-tooltip-bubble.show {
+      opacity: 1;
+      visibility: visible;
+    }
+    .cell-tooltip-bubble::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      margin-left: -6px;
+      border: 6px solid transparent;
+      border-top-color: #2d2d2d;
+    }
+    .admin-table .cell-text, .admin-table td[data-fulltext] { cursor: default; }
   </style>
 </head>
 <body>
+  <div id="cellTooltip" class="cell-tooltip-bubble" aria-hidden="true"></div>
   <div class="admin-lock-backdrop" id="adminLock">
     <div class="admin-lock-modal">
       <h2>통합 접수 조회 (관리자 전용)</h2>
@@ -379,6 +412,50 @@
       });
 
       attachCheckboxListeners();
+      attachCellTooltips();
+    }
+
+    function attachCellTooltips() {
+      const tip = document.getElementById('cellTooltip');
+      if (!tip) return;
+      const table = listEl.querySelector('.admin-table');
+      if (!table) return;
+      const show = (el, text) => {
+        if (!text || (typeof text === 'string' && text.trim() === '') || text === '-') return;
+        tip.textContent = text;
+        tip.classList.add('show');
+        tip.setAttribute('aria-hidden', 'false');
+        requestAnimationFrame(() => {
+          const rect = el.getBoundingClientRect();
+          const tipRect = tip.getBoundingClientRect();
+          const gap = 8;
+          let top = rect.top - tipRect.height - gap;
+          if (top < 8) top = rect.bottom + gap;
+          let left = rect.left + (rect.width / 2) - (tipRect.width / 2);
+          if (left < 8) left = 8;
+          if (left + tipRect.width > window.innerWidth - 8) left = window.innerWidth - tipRect.width - 8;
+          tip.style.top = top + 'px';
+          tip.style.left = left + 'px';
+        });
+      };
+      const hide = () => {
+        tip.classList.remove('show');
+        tip.setAttribute('aria-hidden', 'true');
+      };
+      table.querySelectorAll('.cell-text, td[title]').forEach((el) => {
+        const text = el.getAttribute('title') || (el.textContent && el.textContent.trim()) || '';
+        if (!text) return;
+        el.removeAttribute('title');
+        el.setAttribute('data-fulltext', text);
+        el.addEventListener('mouseenter', (e) => {
+          e.stopPropagation();
+          show(el, text);
+        });
+        el.addEventListener('mouseleave', (e) => {
+          e.stopPropagation();
+          hide();
+        });
+      });
     }
 
     function enforceSingleFlag(row) {
