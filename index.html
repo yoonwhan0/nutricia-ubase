@@ -62,10 +62,10 @@
   <div class="admin-lock-backdrop" id="adminLock">
     <div class="admin-lock-modal">
       <h2>통합 접수 조회 (관리자 전용)</h2>
-      <p>접근 비밀번호를 입력해 주세요.</p>
-      <input type="password" class="admin-lock-input" id="adminPassword" placeholder="비밀번호" autocomplete="off">
+      <input type="email" class="admin-lock-input" id="adminEmail" placeholder="이메일" autocomplete="username">
+      <input type="password" class="admin-lock-input" id="adminPassword" placeholder="비밀번호" autocomplete="current-password">
       <div class="admin-lock-error" id="adminLockError"></div>
-      <button type="button" class="btn btn-primary" id="adminUnlockBtn" style="width:100%;">접속하기</button>
+      <button type="button" class="btn btn-primary" id="adminUnlockBtn" style="width:100%;">로그인</button>
     </div>
   </div>
 
@@ -74,6 +74,8 @@
       <div class="admin-header">
         <h1>압타밀 통합 접수 조회 (4개 사이트 · 조회 + 상태 체크만)</h1>
         <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+          <span id="adminUserEmail" style="font-size: 12px; color: #666;"></span>
+          <button type="button" class="btn" id="adminLogoutBtn" style="background: #666; color: #fff; font-size: 12px;">로그아웃</button>
           <div class="status-indicator">
             <span class="status-dot" id="statusDotAdmin"></span>
             <span id="statusTextAdmin">서버 연결 확인 중…</span>
@@ -106,8 +108,14 @@
       onValue,
       update
     } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+    import {
+      getAuth,
+      signInWithEmailAndPassword,
+      onAuthStateChanged,
+      signOut
+    } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-auth.js";
 
-    const ADMIN_KEY = 'ubase2026@@@@';
+    const ALLOWED_EMAILS = ['ubase@ubase.co.kr'];
 
     const PREFIXES = ['nutricia-x9fQ2kM7-1', 'nutricia-aL4pZ8Tq-2', 'nutricia-nu7VnCwR3H-3', 'nutricia-MK2rP9dS-4'];
     const PROJECT_LABELS = ['1', '2', '3', '4'];
@@ -123,18 +131,22 @@
       appId: "1:605906618980:web:d947540696a573c4856d71"
     };
 
-    let app, db;
+    let app, db, auth;
     try {
       app = initializeApp(firebaseConfig);
       db = getDatabase(app);
+      auth = getAuth(app);
     } catch (err) {
       console.error('Firebase 초기화 오류:', err);
     }
 
     const adminLock = document.getElementById('adminLock');
+    const adminEmailInput = document.getElementById('adminEmail');
     const adminKeyInput = document.getElementById('adminPassword');
     const adminLockError = document.getElementById('adminLockError');
     const adminUnlockBtn = document.getElementById('adminUnlockBtn');
+    const adminLogoutBtn = document.getElementById('adminLogoutBtn');
+    const adminUserEmailEl = document.getElementById('adminUserEmail');
     const listEl = document.getElementById('submissionList');
     const listView = document.getElementById('listView');
     const statusDotAdmin = document.getElementById('statusDotAdmin');
@@ -184,19 +196,60 @@
       subscribeRealtime();
     }
 
-    function handleUnlock() {
-      const val = (adminKeyInput.value || '').trim();
-      if (val === ADMIN_KEY) {
-        if (adminLock) adminLock.style.display = 'none';
-        adminLockError.textContent = '';
-        listView.style.display = 'block';
-        doLoad();
-      } else {
-        adminLockError.textContent = '비밀번호가 올바르지 않습니다.';
-      }
+    function showAdminUI(user) {
+      if (adminLock) adminLock.style.display = 'none';
+      listView.style.display = 'block';
+      if (adminUserEmailEl) adminUserEmailEl.textContent = user.email || '';
+      doLoad();
     }
-    adminUnlockBtn.addEventListener('click', handleUnlock);
-    adminKeyInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') handleUnlock(); });
+    function showLoginUI() {
+      if (adminLock) adminLock.style.display = 'flex';
+      listView.style.display = 'none';
+      if (adminLockError) adminLockError.textContent = '';
+    }
+
+    onAuthStateChanged(auth, (user) => {
+      if (!auth) return;
+      if (!user) {
+        showLoginUI();
+        return;
+      }
+      const email = (user.email || '').trim().toLowerCase();
+      const allowed = ALLOWED_EMAILS.some((e) => e.toLowerCase() === email);
+      if (allowed) {
+        showAdminUI(user);
+      } else {
+        signOut(auth).then(() => {
+          showLoginUI();
+          if (adminLockError) adminLockError.textContent = '이 페이지에 접근 권한이 있는 계정이 아닙니다.';
+        });
+      }
+    });
+
+    function handleLogin() {
+      const email = (adminEmailInput && adminEmailInput.value) ? adminEmailInput.value.trim() : '';
+      const password = adminKeyInput ? adminKeyInput.value : '';
+      if (!email || !password) {
+        adminLockError.textContent = '이메일과 비밀번호를 입력해 주세요.';
+        return;
+      }
+      adminLockError.textContent = '';
+      adminUnlockBtn.disabled = true;
+      signInWithEmailAndPassword(auth, email, password)
+        .then(() => { adminUnlockBtn.disabled = false; })
+        .catch((err) => {
+          adminUnlockBtn.disabled = false;
+          if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+            adminLockError.textContent = '이메일 또는 비밀번호가 올바르지 않습니다.';
+          } else {
+            adminLockError.textContent = err.message || '로그인에 실패했습니다.';
+          }
+        });
+    }
+    adminUnlockBtn.addEventListener('click', handleLogin);
+    adminKeyInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') handleLogin(); });
+    if (adminEmailInput) adminEmailInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') handleLogin(); });
+    if (adminLogoutBtn) adminLogoutBtn.addEventListener('click', () => { signOut(auth).then(() => showLoginUI()); });
 
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && listView && listView.style.display !== 'none') doLoad();
@@ -317,8 +370,8 @@
       const pageItems = filteredItems.slice(start, start + PAGE_SIZE);
 
       const headerRow =
-        '<th class="cell-seq">A 순번</th>' +
-        '<th class="cell-project">B 프로젝트</th>' +
+        '<th class="cell-seq">순번</th>' +
+        '<th class="cell-project">접수경로</th>' +
         '<th>사진 보기</th>' +
         '<th>이름</th><th>연락처</th><th>주소</th><th>상세 주소</th><th>개인통관부호</th>' +
         '<th>접수ID</th><th>접수일시</th>' +
