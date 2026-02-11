@@ -32,6 +32,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
     import { getDatabase, ref as dbRef, get, child } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCxNwnAzMn0JUkHGDXgY4taTPJYeABDohg",
@@ -49,10 +50,11 @@
     const isLegacy = params.get('legacy') === '1' || params.get('legacy') === 'true';
     const prefix = params.get('prefix') || 'nutricia-x9fQ2kM7-1';
 
-    let app, db;
+    let app, db, auth;
     try {
       app = initializeApp(firebaseConfig);
       db = getDatabase(app);
+      auth = getAuth(app);
     } catch (err) {
       document.getElementById('detailRoot').innerHTML = '<p class="msg error">Firebase 초기화에 실패했습니다.</p>';
       throw err;
@@ -85,9 +87,15 @@
     }
 
     const root = document.getElementById('detailRoot');
-    if (!id || !prefix) {
-      root.innerHTML = '<p class="msg error">접수 ID 또는 프로젝트 정보가 없습니다. 목록에서 사진 보기를 눌러 열어주세요.</p>';
-    } else {
+    function loadPhotoDetail() {
+      if (!id || !prefix) {
+        root.innerHTML = '<p class="msg error">접수 ID 또는 프로젝트 정보가 없습니다. 목록에서 사진 보기를 눌러 열어주세요.</p>';
+        return;
+      }
+      if (!auth.currentUser) {
+        root.innerHTML = '<p class="msg error">로그인이 필요합니다. 목록 페이지에서 먼저 로그인한 뒤 사진 보기를 눌러주세요.</p>';
+        return;
+      }
       const rootRef = dbRef(db);
       const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
       get(child(rootRef, subPath)).then(snap => {
@@ -132,6 +140,14 @@
         root.innerHTML = '<p class="msg error">불러오기 실패: ' + (err.message || err) + '</p>';
       });
     }
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        loadPhotoDetail();
+      } else {
+        root.innerHTML = '<p class="msg error">로그인이 필요합니다. 목록 페이지에서 먼저 로그인한 뒤 사진 보기를 눌러주세요.</p>';
+      }
+    });
   </script>
 </body>
 </html>
