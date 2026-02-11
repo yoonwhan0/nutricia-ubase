@@ -294,7 +294,8 @@
         });
       });
       items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-      items.forEach((it, i) => { it._globalSeq = i + 1; });
+      const total = items.length;
+      items.forEach((it, i) => { it._globalSeq = total - i; });
       return items;
     }
 
