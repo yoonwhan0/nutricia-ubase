@@ -55,6 +55,86 @@
       border-top-color: #2d2d2d;
     }
     .admin-table .cell-text, .admin-table td[data-fulltext] { cursor: default; }
+
+    /* 전체화면 상세 모달 (사진 + 고객정보/체크) */
+    .detail-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(0,0,0,0.6);
+      overflow: auto;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    .detail-modal-overlay.show { display: block; }
+    .detail-modal-box {
+      max-width: 1100px;
+      margin: 0 auto 24px;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+      overflow: hidden;
+      min-height: 80vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .detail-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 20px;
+      background: #1a1a1a;
+      color: #fff;
+      font-size: 16px;
+    }
+    .detail-modal-close {
+      padding: 8px 16px;
+      background: #444;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .detail-modal-close:hover { background: #555; }
+    .detail-modal-body {
+      display: flex;
+      flex: 1;
+      flex-wrap: wrap;
+      gap: 0;
+    }
+    .detail-modal-photos {
+      flex: 1 1 420px;
+      min-width: 280px;
+      padding: 20px;
+      border-right: 1px solid #e0e0e0;
+      overflow: auto;
+    }
+    .detail-modal-photos h3 { margin: 0 0 12px 0; font-size: 14px; color: #333; }
+    .detail-modal-photo-box { margin-bottom: 20px; }
+    .detail-modal-photo-box .caption { font-size: 12px; color: #666; margin-bottom: 8px; }
+    .detail-modal-photo-box img {
+      max-width: 100%;
+      max-height: 220px;
+      cursor: pointer;
+      display: block;
+      border: 1px solid #eee;
+      border-radius: 4px;
+    }
+    .detail-modal-photo-box .no-image { color: #999; font-size: 13px; }
+    .detail-modal-info {
+      flex: 1 1 380px;
+      min-width: 280px;
+      padding: 20px;
+      overflow: auto;
+    }
+    .detail-modal-info h3 { margin: 0 0 12px 0; font-size: 14px; color: #333; }
+    .detail-modal-info .info-row { margin-bottom: 10px; font-size: 13px; }
+    .detail-modal-info .info-row strong { display: inline-block; width: 100px; color: #555; }
+    .detail-modal-flags { margin-top: 20px; padding-top: 16px; border-top: 1px solid #eee; }
+    .detail-modal-flags label { display: block; margin-bottom: 10px; font-size: 14px; cursor: pointer; }
+    .detail-modal-flags input[type="checkbox"] { margin-right: 8px; }
   </style>
 </head>
 <body>
@@ -95,6 +175,24 @@
       <p class="msg info">4개 사이트 접수를 한 화면에서 조회합니다. 환불/교환/잘못된정보 체크박스만 변경 가능하며, 상세 수정은 각 사이트 어드민에서 하세요.</p>
       <div id="listMessage"></div>
       <div id="submissionList"></div>
+    </div>
+  </div>
+
+  <!-- 전체화면 상세 모달: 사진 + 고객정보/체크 -->
+  <div id="detailModal" class="detail-modal-overlay" aria-hidden="true">
+    <div class="detail-modal-box">
+      <div class="detail-modal-header">
+        <span id="detailModalTitle">고객 상세 · 사진 보기</span>
+        <button type="button" class="detail-modal-close" id="detailModalClose">닫기</button>
+      </div>
+      <div class="detail-modal-body">
+        <div class="detail-modal-photos" id="detailModalPhotos">사진 불러오는 중…</div>
+        <div class="detail-modal-info" id="detailModalInfo">
+          <h3>고객 정보</h3>
+          <div id="detailModalInfoRows"></div>
+          <div class="detail-modal-flags" id="detailModalFlags"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -163,6 +261,7 @@
     let searchFilters = { name: '', contact: '', customsCode: '' };
     let metaSnaps = {};
     let realtimeUnsub = [];
+    let currentDetailData = null; // 모달에 열린 고객 데이터
 
     function normalizePhone(v) {
       return (v || '').replace(/\D/g, '');
@@ -376,7 +475,7 @@
         '<th>사진 보기</th>' +
         '<th>이름</th><th>연락처</th><th>주소</th><th>상세 주소</th><th>개인통관부호</th>' +
         '<th>접수ID</th><th>접수일시</th>' +
-        '<th>환불</th><th>교환</th><th>잘못된정보</th><th>환불완료</th><th>교환완료</th>' +
+        '<th>환불</th><th>교환</th><th>잘못된정보</th><th>6캔이상</th><th>환불완료</th><th>교환완료</th>' +
         '<th>은행</th><th>계좌번호</th><th>계좌명</th><th>구매금액</th><th>수량(캔수)</th>' +
         '<th>제품명(1)</th><th>제조번호(1)</th><th>고유번호(1)</th>' +
         '<th>제품명(2)</th><th>제조번호(2)</th><th>고유번호(2)</th>' +
@@ -407,11 +506,12 @@
         const refundC = d.refundDone ? ' checked' : '';
         const exchangeC = d.exchangeDone ? ' checked' : '';
         const invalidC = d.invalidInfo ? ' checked' : '';
+        const sixCansC = d.sixCansOrMore ? ' checked' : '';
 
         rowsHtml += '<tr data-id="' + escapeAttr(d.id) + '" data-date-key="' + escapeAttr(dateKey) + '" data-legacy="' + (isLegacy ? '1' : '0') + '" data-prefix="' + escapeAttr(prefix) + '" data-project-index="' + d._projectIndex + '">';
         rowsHtml += '<td class="cell-seq">' + seq + '</td>';
         rowsHtml += '<td class="cell-project">' + proj + '</td>';
-        rowsHtml += '<td><a href="' + detailUrl + '" target="_blank" rel="noopener" class="btn btn-primary" style="font-size:11px;padding:2px 6px;">사진 보기</a></td>';
+        rowsHtml += '<td><button type="button" class="btn btn-primary photo-view-btn" style="font-size:11px;padding:2px 6px;">사진 보기</button></td>';
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.name || '-') + '</span></td>';
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.contact || '-') + '</span></td>';
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.address || '-') + '</span></td>';
@@ -422,6 +522,7 @@
         rowsHtml += '<td><label><input type="checkbox" class="list-cb-refund" data-field="refundDone"' + refundC + '> 환불</label></td>';
         rowsHtml += '<td><label><input type="checkbox" class="list-cb-exchange" data-field="exchangeDone"' + exchangeC + '> 교환</label></td>';
         rowsHtml += '<td><label><input type="checkbox" class="list-cb-invalid" data-field="invalidInfo"' + invalidC + '> 잘못</label></td>';
+        rowsHtml += '<td><label><input type="checkbox" class="list-cb-sixCans" data-field="sixCansOrMore"' + sixCansC + '> 6캔이상</label></td>';
         rowsHtml += '<td class="cell-flag">' + (d.refundComplete ? 'Y' : '-') + '</td>';
         rowsHtml += '<td class="cell-flag">' + (d.exchangeComplete ? 'Y' : '-') + '</td>';
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.bankName || '-') + '</span></td>';
@@ -454,7 +555,7 @@
       listEl.innerHTML = tableHtml + paginationHtml;
       const infoP = document.createElement('p');
       infoP.className = 'msg info';
-      infoP.textContent = (searchFilters.name || searchFilters.contact || searchFilters.customsCode ? '검색 결과 ' + total + '건 (전체 ' + allItems.length + '건 중)' : '전체 ' + allItems.length + '건') + ', 페이지당 30건. 환불/교환/잘못된정보만 체크 변경 가능.';
+      infoP.textContent = (searchFilters.name || searchFilters.contact || searchFilters.customsCode ? '검색 결과 ' + total + '건 (전체 ' + allItems.length + '건 중)' : '전체 ' + allItems.length + '건') + ', 페이지당 30건. 환불/교환/잘못된정보/6캔이상 체크 변경 가능.';
       listEl.insertBefore(infoP, listEl.firstChild);
 
       listEl.querySelectorAll('.admin-page-btn').forEach((btn) => {
@@ -468,6 +569,7 @@
       });
 
       attachCheckboxListeners();
+      attachPhotoViewButtons();
       attachCellTooltips();
     }
 
@@ -530,6 +632,187 @@
       return (name || contact) ? '이 고객 [' + name + ' / ' + contact + ']' : '이 고객';
     }
 
+    function getPhotoListFromData(d, singleKey, listKey) {
+      if (!d) return [];
+      if (Array.isArray(d[listKey])) return d[listKey];
+      const single = d[singleKey];
+      return single ? [single] : [];
+    }
+
+    function openDetailModal(d) {
+      if (!d || !db) return;
+      currentDetailData = d;
+      const modal = document.getElementById('detailModal');
+      const titleEl = document.getElementById('detailModalTitle');
+      const infoRowsEl = document.getElementById('detailModalInfoRows');
+      const flagsEl = document.getElementById('detailModalFlags');
+      titleEl.textContent = '고객 상세 · 사진 보기 — ' + (d.name || d.contact || d.id || '');
+      infoRowsEl.innerHTML =
+        '<div class="info-row"><strong>이름</strong> ' + escapeHtml(d.name || '-') + '</div>' +
+        '<div class="info-row"><strong>연락처</strong> ' + escapeHtml(d.contact || '-') + '</div>' +
+        '<div class="info-row"><strong>주소</strong> ' + escapeHtml(d.address || '-') + '</div>' +
+        '<div class="info-row"><strong>상세주소</strong> ' + escapeHtml(d.addressDetail || '-') + '</div>' +
+        '<div class="info-row"><strong>개인통관부호</strong> ' + escapeHtml(d.customsCode || '-') + '</div>' +
+        '<div class="info-row"><strong>접수ID</strong> ' + escapeHtml(d.id || '-') + '</div>' +
+        '<div class="info-row"><strong>접수일시</strong> ' + formatDate(d.createdAt) + '</div>';
+      const rC = d.refundDone ? ' checked' : '';
+      const eC = d.exchangeDone ? ' checked' : '';
+      const iC = d.invalidInfo ? ' checked' : '';
+      const sC = d.sixCansOrMore ? ' checked' : '';
+      flagsEl.innerHTML =
+        '<h3>상태 체크 (저장됨)</h3>' +
+        '<label><input type="checkbox" id="dm-cb-refund" data-field="refundDone"' + rC + '> 환불</label>' +
+        '<label><input type="checkbox" id="dm-cb-exchange" data-field="exchangeDone"' + eC + '> 교환</label>' +
+        '<label><input type="checkbox" id="dm-cb-invalid" data-field="invalidInfo"' + iC + '> 잘못된정보</label>' +
+        '<label><input type="checkbox" id="dm-cb-sixCans" data-field="sixCansOrMore"' + sC + '> 6캔이상</label>';
+      document.getElementById('detailModalPhotos').textContent = '사진 불러오는 중…';
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden', 'false');
+      loadDetailModalPhotos(d);
+      attachDetailModalCheckboxListeners();
+    }
+
+    function closeDetailModal() {
+      const modal = document.getElementById('detailModal');
+      modal.classList.remove('show');
+      modal.setAttribute('aria-hidden', 'true');
+      currentDetailData = null;
+    }
+
+    function loadDetailModalPhotos(d) {
+      const prefix = d._prefix || '';
+      const dateKey = d._dateKey || '';
+      const id = d.id;
+      const isLegacy = !!d._isLegacy;
+      const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
+      const container = document.getElementById('detailModalPhotos');
+      get(child(dbRef(db), subPath)).then(snap => {
+        if (!snap.exists()) {
+          container.innerHTML = '<p class="no-image">해당 접수 데이터가 없습니다.</p>';
+          return;
+        }
+        const data = snap.val();
+        const p1List = getPhotoListFromData(data, 'photo1', 'photo1List');
+        const p2List = getPhotoListFromData(data, 'photo2', 'photo2List');
+        const p3List = getPhotoListFromData(data, 'photo3', 'photo3List');
+        let html = '<div class="detail-modal-photo-box"><h3>1. 구매 시 영수증</h3><div class="caption">업로드된 사진</div>';
+        if (p1List.length) p1List.forEach((url) => { html += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="영수증" data-url="' + url.replace(/"/g, '&quot;') + '">'; });
+        else html += '<div class="no-image">없음</div>';
+        html += '</div><div class="detail-modal-photo-box"><h3>2. 제품 앞면</h3><div class="caption">업로드된 사진</div>';
+        if (p2List.length) p2List.forEach((url) => { html += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="제품 앞면" data-url="' + url.replace(/"/g, '&quot;') + '">'; });
+        else html += '<div class="no-image">없음</div>';
+        html += '</div><div class="detail-modal-photo-box"><h3>3. 제품 뒷면/바닥면</h3><div class="caption">업로드된 사진</div>';
+        if (p3List.length) p3List.forEach((url) => { html += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="제품 뒷면" data-url="' + url.replace(/"/g, '&quot;') + '">'; });
+        else html += '<div class="no-image">없음</div>';
+        html += '</div>';
+        container.innerHTML = html;
+        container.querySelectorAll('img[data-url]').forEach(img => {
+          img.addEventListener('click', () => {
+            const url = img.getAttribute('data-url');
+            if (url) window.open(url.startsWith('data:') ? url : url, '_blank');
+          });
+        });
+      }).catch(() => { container.innerHTML = '<p class="no-image">사진을 불러올 수 없습니다.</p>'; });
+    }
+
+    function enforceDetailModalSingleFlag() {
+      const cbRefund = document.getElementById('dm-cb-refund');
+      const cbExchange = document.getElementById('dm-cb-exchange');
+      const cbInvalid = document.getElementById('dm-cb-invalid');
+      if (!cbRefund || !cbExchange || !cbInvalid) return;
+      if (cbRefund.checked) { cbExchange.checked = false; cbInvalid.checked = false; }
+      else if (cbExchange.checked) { cbRefund.checked = false; cbInvalid.checked = false; }
+      else if (cbInvalid.checked) { cbRefund.checked = false; cbExchange.checked = false; }
+    }
+
+    async function saveFlagsOnlyByData(payload) {
+      const d = currentDetailData;
+      if (!d || !db) return;
+      const id = d.id;
+      const dateKey = (d._dateKey || '').trim();
+      const isLegacy = !!d._isLegacy;
+      const prefix = (d._prefix || '').trim();
+      if (!id || !prefix) return;
+      if (!isLegacy && !dateKey) return;
+      const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
+      const metaPath = dateKey ? (prefix + '/submissions_meta/' + dateKey + '/' + id) : '';
+      try {
+        await update(dbRef(db, subPath), payload);
+        if (metaPath) await update(dbRef(db, metaPath), payload);
+        const it = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
+        if (it) {
+          it.refundDone = payload.refundDone;
+          it.exchangeDone = payload.exchangeDone;
+          it.invalidInfo = payload.invalidInfo;
+          it.sixCansOrMore = payload.sixCansOrMore;
+        }
+        const tbody = listEl.querySelector('tbody');
+        if (tbody) tbody.querySelectorAll('tr').forEach((r) => {
+          if (r.getAttribute('data-id') !== id || r.getAttribute('data-prefix') !== prefix) return;
+          const row = r;
+          const set = (sel, val) => { const c = row.querySelector(sel); if (c) c.checked = !!val; };
+          set('.list-cb-refund', payload.refundDone);
+          set('.list-cb-exchange', payload.exchangeDone);
+          set('.list-cb-invalid', payload.invalidInfo);
+          set('.list-cb-sixCans', payload.sixCansOrMore);
+        });
+      } catch (err) {
+        console.error('저장 오류:', err);
+        alert('저장 실패: ' + (err.message || err));
+      }
+    }
+
+    function attachDetailModalCheckboxListeners() {
+      const flagsEl = document.getElementById('detailModalFlags');
+      if (!flagsEl) return;
+      const cbRefund = document.getElementById('dm-cb-refund');
+      const cbExchange = document.getElementById('dm-cb-exchange');
+      const cbInvalid = document.getElementById('dm-cb-invalid');
+      const cbSix = document.getElementById('dm-cb-sixCans');
+      const saveFromModal = () => {
+        const refundDone = !!cbRefund?.checked;
+        const exchangeDone = !!cbExchange?.checked;
+        const invalidInfo = !!cbInvalid?.checked;
+        const sixCansOrMore = !!cbSix?.checked;
+        saveFlagsOnlyByData({ refundDone, exchangeDone, invalidInfo, sixCansOrMore });
+      };
+      [cbRefund, cbExchange, cbInvalid].forEach(cb => {
+        if (!cb) return;
+        cb.addEventListener('change', () => {
+          const field = cb.getAttribute('data-field');
+          if (cb.checked && (field === 'refundDone' || field === 'exchangeDone' || field === 'invalidInfo')) {
+            const label = field === 'refundDone' ? '환불' : (field === 'exchangeDone' ? '교환' : '잘못된 정보');
+            if (!confirm('이 고객\n\n' + label + ' 체크가 맞습니까?\n\n확인 시 저장됩니다.')) { cb.checked = false; return; }
+          }
+          enforceDetailModalSingleFlag();
+          saveFromModal();
+        });
+      });
+      if (cbSix) cbSix.addEventListener('change', saveFromModal);
+    }
+
+    function attachPhotoViewButtons() {
+      listEl.querySelectorAll('.photo-view-btn').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const row = btn.closest('tr');
+          if (!row) return;
+          const id = row.getAttribute('data-id');
+          const dateKey = row.getAttribute('data-date-key') || '';
+          const prefix = row.getAttribute('data-prefix') || '';
+          const d = allItems.find((it) => String(it.id) === String(id) && (it._dateKey || '') === dateKey && it._prefix === prefix);
+          if (d) openDetailModal(d);
+        });
+      });
+    }
+
+    (function initDetailModalClose() {
+      const modal = document.getElementById('detailModal');
+      const closeBtn = document.getElementById('detailModalClose');
+      if (closeBtn) closeBtn.addEventListener('click', closeDetailModal);
+      if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) closeDetailModal(); });
+    })();
+
     async function saveFlagsOnly(row) {
       const id = row.getAttribute('data-id');
       const dateKey = (row.getAttribute('data-date-key') || '').trim();
@@ -544,7 +827,8 @@
       const refundDone = !!row.querySelector('.list-cb-refund')?.checked;
       const exchangeDone = !!row.querySelector('.list-cb-exchange')?.checked;
       const invalidInfo = !!row.querySelector('.list-cb-invalid')?.checked;
-      const payload = { refundDone, exchangeDone, invalidInfo };
+      const sixCansOrMore = !!row.querySelector('.list-cb-sixCans')?.checked;
+      const payload = { refundDone, exchangeDone, invalidInfo, sixCansOrMore };
       const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
       const metaPath = prefix + '/submissions_meta/' + dateKey + '/' + id;
       try {
@@ -555,6 +839,7 @@
           it.refundDone = refundDone;
           it.exchangeDone = exchangeDone;
           it.invalidInfo = invalidInfo;
+          it.sixCansOrMore = sixCansOrMore;
         }
         renderTable();
       } catch (err) {
@@ -567,9 +852,13 @@
       const tbody = listEl.querySelector('tbody');
       if (!tbody) return;
       tbody.querySelectorAll('tr').forEach((row) => {
-        row.querySelectorAll('.list-cb-refund, .list-cb-exchange, .list-cb-invalid').forEach((cb) => {
+        row.querySelectorAll('.list-cb-refund, .list-cb-exchange, .list-cb-invalid, .list-cb-sixCans').forEach((cb) => {
           cb.addEventListener('change', () => {
             const field = cb.getAttribute('data-field');
+            if (field === 'sixCansOrMore') {
+              saveFlagsOnly(row);
+              return;
+            }
             if (cb.checked) {
               const label = field === 'refundDone' ? '환불' : (field === 'exchangeDone' ? '교환' : '잘못된 정보');
               const info = getRowCustomerInfo(row);
