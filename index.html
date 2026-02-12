@@ -376,7 +376,7 @@
         '<th>사진 보기</th>' +
         '<th>이름</th><th>연락처</th><th>주소</th><th>상세 주소</th><th>개인통관부호</th>' +
         '<th>접수ID</th><th>접수일시</th>' +
-        '<th>환불</th><th>교환</th><th>잘못된정보</th>' +
+        '<th>환불</th><th>교환</th><th>잘못된정보</th><th>환불완료</th><th>교환완료</th>' +
         '<th>은행</th><th>계좌번호</th><th>계좌명</th><th>구매금액</th><th>수량(캔수)</th>' +
         '<th>제품명(1)</th><th>제조번호(1)</th><th>고유번호(1)</th>' +
         '<th>제품명(2)</th><th>제조번호(2)</th><th>고유번호(2)</th>' +
@@ -422,6 +422,8 @@
         rowsHtml += '<td><label><input type="checkbox" class="list-cb-refund" data-field="refundDone"' + refundC + '> 환불</label></td>';
         rowsHtml += '<td><label><input type="checkbox" class="list-cb-exchange" data-field="exchangeDone"' + exchangeC + '> 교환</label></td>';
         rowsHtml += '<td><label><input type="checkbox" class="list-cb-invalid" data-field="invalidInfo"' + invalidC + '> 잘못</label></td>';
+        rowsHtml += '<td class="cell-flag">' + (d.refundComplete ? 'Y' : '-') + '</td>';
+        rowsHtml += '<td class="cell-flag">' + (d.exchangeComplete ? 'Y' : '-') + '</td>';
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.bankName || '-') + '</span></td>';
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.bankAccountNumber || '-') + '</span></td>';
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.bankAccountName || '-') + '</span></td>';
