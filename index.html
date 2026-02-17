@@ -519,7 +519,7 @@
         '<th>이름</th><th>연락처</th><th>주소</th><th>상세 주소</th><th>개인통관부호</th>' +
         '<th>접수ID</th><th>접수일시</th>' +
         '<th>환불</th><th>교환</th><th>잘못된정보</th><th>6캔이상</th><th>환불완료</th><th>교환완료</th>' +
-        '<th>은행</th><th>계좌번호</th><th>계좌명</th><th>구매금액</th><th>수량(캔수)</th>' +
+        '<th>은행</th><th>계좌번호</th><th>계좌명</th><th>환불금액</th><th>환불(교환)캔수</th>' +
         '<th>제품명(1)</th><th>제조번호(1)</th><th>고유번호(1)</th>' +
         '<th>제품명(2)</th><th>제조번호(2)</th><th>고유번호(2)</th>' +
         '<th>제품명(3)</th><th>제조번호(3)</th><th>고유번호(3)</th>' +
@@ -593,6 +593,7 @@
           '<button type="button" class="btn btn-primary admin-page-btn" data-page="' + (paginationPage - 1) + '" ' + (paginationPage <= 1 ? 'disabled' : '') + '>이전</button>' +
           '<span class="admin-page-info">페이지 ' + paginationPage + ' / ' + totalPages + ' (총 ' + total + '건)</span>' +
           '<button type="button" class="btn btn-primary admin-page-btn" data-page="' + (paginationPage + 1) + '" ' + (paginationPage >= totalPages ? 'disabled' : '') + '>다음</button>' +
+          '<button type="button" class="btn btn-primary admin-page-btn" data-page="' + totalPages + '" ' + (paginationPage >= totalPages ? 'disabled' : '') + '>마지막</button>' +
         '</div>';
 
       listEl.innerHTML = tableHtml + paginationHtml;
