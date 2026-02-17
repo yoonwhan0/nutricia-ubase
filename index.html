@@ -207,6 +207,7 @@
           <input type="text" id="searchCustoms" placeholder="통관번호(개인통관부호)" style="padding: 6px 8px; font-size: 12px;">
           <button type="button" class="btn btn-primary" id="searchBtn" style="width: auto;">검색</button>
           <button type="button" class="btn" id="searchResetBtn" style="width: auto; background: #777; color: #fff;">초기화</button>
+          <button type="button" class="btn" id="listRefreshBtn" style="width: auto; background: #0a5; color: #fff;">목록 새로고침</button>
         </div>
       </div>
       <p class="msg info">4개 사이트 접수를 한 화면에서 조회합니다. 환불/교환/잘못된정보 체크박스만 변경 가능하며, 상세 수정은 각 사이트 어드민에서 하세요.</p>
@@ -333,9 +334,7 @@
         listEl.innerHTML = '<div class="msg error">Firebase가 초기화되지 않았습니다.</div>';
         return;
       }
-      listEl.innerHTML = '<p class="msg info">4개 프로젝트 데이터 로드 중… (실시간 반영)</p>';
-      metaSnaps = {};
-      subscribeRealtime();
+      loadMetaOnce();
     }
 
     function showAdminUI(user) {
@@ -394,7 +393,9 @@
     if (adminLogoutBtn) adminLogoutBtn.addEventListener('click', () => { signOut(auth).then(() => showLoginUI()); });
 
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && listView && listView.style.display !== 'none') doLoad();
+      if (document.visibilityState === 'visible' && listView && listView.style.display !== 'none') {
+        if (Object.keys(metaSnaps).length === 0) loadMetaOnce();
+      }
     });
 
     function formatDate(t) {
@@ -441,23 +442,30 @@
       return items;
     }
 
-    function applyRealtimeAndRender() {
+    function applyMetaAndRender() {
       if (Object.keys(metaSnaps).length !== PREFIXES.length) return;
       allItems = buildItemsFromMetaSnaps();
       paginationPage = 1;
       renderTable();
     }
 
-    /** 4개 프로젝트 submissions_meta 실시간 구독 → 변경 시 즉시 반영 */
-    function subscribeRealtime() {
-      realtimeUnsub.forEach((u) => { try { u(); } catch (_) {} });
-      realtimeUnsub = [];
-      realtimeUnsub = PREFIXES.map((prefix) => {
-        return onValue(dbRef(db, prefix + '/submissions_meta'), (snap) => {
+    /** 4개 프로젝트 submissions_meta 한 번만 읽기 (실시간 구독 없음 → 다운로드 비용 절감) */
+    async function loadMetaOnce() {
+      if (!db || !listEl) return;
+      const refreshBtn = document.getElementById('listRefreshBtn');
+      listEl.innerHTML = '<p class="msg info">4개 프로젝트 데이터 로드 중…</p>';
+      if (refreshBtn) refreshBtn.disabled = true;
+      metaSnaps = {};
+      try {
+        for (const prefix of PREFIXES) {
+          const snap = await get(dbRef(db, prefix + '/submissions_meta'));
           metaSnaps[prefix] = snap;
-          applyRealtimeAndRender();
-        });
-      });
+        }
+        applyMetaAndRender();
+      } catch (err) {
+        listEl.innerHTML = '<p class="msg error">로드 실패: ' + (err.message || err) + '</p>';
+      }
+      if (refreshBtn) refreshBtn.disabled = false;
     }
 
     function getFilteredItems() {
@@ -491,6 +499,8 @@
       paginationPage = 1;
       renderTable();
     });
+    const listRefreshBtn = document.getElementById('listRefreshBtn');
+    if (listRefreshBtn) listRefreshBtn.addEventListener('click', () => loadMetaOnce());
 
     function getUniqueCodesArray(d) {
       let arr = d.uniqueCodesData;
