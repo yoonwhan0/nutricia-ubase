@@ -560,8 +560,10 @@
         const exchangeC = d.exchangeDone ? ' checked' : '';
         const invalidC = d.invalidInfo ? ' checked' : '';
         const sixCansC = d.sixCansOrMore ? ' checked' : '';
+        const locked = !!(d.refundComplete || d.exchangeComplete);
+        const lockedAttr = locked ? ' disabled title="처리 완료 건 — 수정 불가"' : '';
 
-        rowsHtml += '<tr data-id="' + escapeAttr(d.id) + '" data-date-key="' + escapeAttr(dateKey) + '" data-legacy="' + (isLegacy ? '1' : '0') + '" data-prefix="' + escapeAttr(prefix) + '" data-project-index="' + d._projectIndex + '">';
+        rowsHtml += '<tr data-id="' + escapeAttr(d.id) + '" data-date-key="' + escapeAttr(dateKey) + '" data-legacy="' + (isLegacy ? '1' : '0') + '" data-prefix="' + escapeAttr(prefix) + '" data-project-index="' + d._projectIndex + '" data-locked="' + (locked ? '1' : '0') + '">';
         rowsHtml += '<td class="cell-seq">' + seq + '</td>';
         rowsHtml += '<td class="cell-project">' + proj + '</td>';
         rowsHtml += '<td><button type="button" class="btn btn-primary photo-view-btn" style="font-size:11px;padding:2px 6px;">사진 보기</button></td>';
@@ -572,9 +574,9 @@
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.customsCode || '-') + '</span></td>';
         rowsHtml += '<td>' + escapeHtml(d.id || '-') + '</td>';
         rowsHtml += '<td>' + formatDate(d.createdAt) + '</td>';
-        rowsHtml += '<td><label><input type="checkbox" class="list-cb-refund" data-field="refundDone"' + refundC + '> 환불</label></td>';
-        rowsHtml += '<td><label><input type="checkbox" class="list-cb-exchange" data-field="exchangeDone"' + exchangeC + '> 교환</label></td>';
-        rowsHtml += '<td><label><input type="checkbox" class="list-cb-invalid" data-field="invalidInfo"' + invalidC + '> 잘못</label></td>';
+        rowsHtml += '<td><label><input type="checkbox" class="list-cb-refund" data-field="refundDone"' + refundC + lockedAttr + '> 환불</label></td>';
+        rowsHtml += '<td><label><input type="checkbox" class="list-cb-exchange" data-field="exchangeDone"' + exchangeC + lockedAttr + '> 교환</label></td>';
+        rowsHtml += '<td><label><input type="checkbox" class="list-cb-invalid" data-field="invalidInfo"' + invalidC + lockedAttr + '> 잘못</label></td>';
         rowsHtml += '<td><label><input type="checkbox" class="list-cb-sixCans" data-field="sixCansOrMore"' + sixCansC + '> 6캔이상</label></td>';
         rowsHtml += '<td class="cell-flag">' + (d.refundComplete ? 'Y' : '-') + '</td>';
         rowsHtml += '<td class="cell-flag">' + (d.exchangeComplete ? 'Y' : '-') + '</td>';
@@ -713,11 +715,14 @@
       const eC = d.exchangeDone ? ' checked' : '';
       const iC = d.invalidInfo ? ' checked' : '';
       const sC = d.sixCansOrMore ? ' checked' : '';
+      const dmLocked = !!(d.refundComplete || d.exchangeComplete);
+      const dmLockedAttr = dmLocked ? ' disabled title="처리 완료 건 — 수정 불가"' : '';
       flagsEl.innerHTML =
         '<h3>상태 체크 (저장됨)</h3>' +
-        '<label><input type="checkbox" id="dm-cb-refund" data-field="refundDone"' + rC + '> 환불</label>' +
-        '<label><input type="checkbox" id="dm-cb-exchange" data-field="exchangeDone"' + eC + '> 교환</label>' +
-        '<label><input type="checkbox" id="dm-cb-invalid" data-field="invalidInfo"' + iC + '> 잘못된정보</label>' +
+        (dmLocked ? '<p style="font-size:12px;color:#856404;margin-bottom:8px;">※ 환불완료/교환완료 건 — 환불·교환·잘못된정보는 수정 불가</p>' : '') +
+        '<label><input type="checkbox" id="dm-cb-refund" data-field="refundDone"' + rC + dmLockedAttr + '> 환불</label>' +
+        '<label><input type="checkbox" id="dm-cb-exchange" data-field="exchangeDone"' + eC + dmLockedAttr + '> 교환</label>' +
+        '<label><input type="checkbox" id="dm-cb-invalid" data-field="invalidInfo"' + iC + dmLockedAttr + '> 잘못된정보</label>' +
         '<label><input type="checkbox" id="dm-cb-sixCans" data-field="sixCansOrMore"' + sC + '> 6캔이상</label>';
       document.getElementById('detailModalPhotos').textContent = '사진 불러오는 중…';
       modal.classList.add('show');
@@ -791,6 +796,12 @@
     async function saveFlagsOnlyByData(payload) {
       const d = currentDetailData;
       if (!d || !db) return;
+      const locked = !!(d.refundComplete || d.exchangeComplete);
+      if (locked) {
+        payload.refundDone = !!d.refundDone;
+        payload.exchangeDone = !!d.exchangeDone;
+        payload.invalidInfo = !!d.invalidInfo;
+      }
       const id = d.id;
       const dateKey = (d._dateKey || '').trim();
       const isLegacy = !!d._isLegacy;
@@ -899,11 +910,18 @@
         alert('저장할 수 없습니다. 접수 정보(dateKey)가 없습니다.');
         return;
       }
+      const item = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
+      const locked = !!(item && (item.refundComplete || item.exchangeComplete));
       enforceSingleFlag(row);
-      const refundDone = !!row.querySelector('.list-cb-refund')?.checked;
-      const exchangeDone = !!row.querySelector('.list-cb-exchange')?.checked;
-      const invalidInfo = !!row.querySelector('.list-cb-invalid')?.checked;
+      let refundDone = !!row.querySelector('.list-cb-refund')?.checked;
+      let exchangeDone = !!row.querySelector('.list-cb-exchange')?.checked;
+      let invalidInfo = !!row.querySelector('.list-cb-invalid')?.checked;
       const sixCansOrMore = !!row.querySelector('.list-cb-sixCans')?.checked;
+      if (locked && item) {
+        refundDone = !!item.refundDone;
+        exchangeDone = !!item.exchangeDone;
+        invalidInfo = !!item.invalidInfo;
+      }
       const payload = { refundDone, exchangeDone, invalidInfo, sixCansOrMore };
       const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
       const metaPath = prefix + '/submissions_meta/' + dateKey + '/' + id;
