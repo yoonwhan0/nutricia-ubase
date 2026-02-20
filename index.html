@@ -56,6 +56,74 @@
     }
     .admin-table .cell-text, .admin-table td[data-fulltext] { cursor: default; }
 
+    /* 소비기한 확인 모달 */
+    .expiry-modal {
+      display: none;
+      position: fixed;
+      z-index: 10001;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.8);
+      overflow: auto;
+    }
+    .expiry-modal.active {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .expiry-modal-content {
+      background-color: #fff;
+      border-radius: 8px;
+      max-width: 90%;
+      max-height: 90vh;
+      position: relative;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+    .expiry-modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #ddd;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .expiry-modal-header h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .expiry-modal-close {
+      background: none;
+      border: none;
+      font-size: 28px;
+      font-weight: 300;
+      color: #999;
+      cursor: pointer;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .expiry-modal-close:hover {
+      color: #333;
+    }
+    .expiry-modal-body {
+      padding: 20px;
+      text-align: center;
+      overflow: auto;
+      max-height: calc(90vh - 80px);
+    }
+    .expiry-modal-body img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 4px;
+    }
+
     /* 전체화면 상세 모달 (사진 + 고객정보/체크) */
     .detail-modal-overlay {
       display: none;
@@ -245,6 +313,15 @@
           <button type="button" class="btn" id="listRefreshBtn" style="width: auto; background: #0a5; color: #fff;">목록 새로고침</button>
         </div>
       </div>
+      <div class="detail-section" style="margin-bottom: 12px; padding: 12px; background: #f9f9f9; border-radius: 8px; border: 1px solid #ddd;">
+        <h2 style="font-size: 14px; margin: 0 0 8px 0;">각 몰별 대상제품 소비기한 확인</h2>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+          <button type="button" class="btn" data-expiry-site="0" style="background: #1a1a1a; color: #fff; font-size: 12px; padding: 8px 16px;">아이베 (1번) 소비기한 확인</button>
+          <button type="button" class="btn" data-expiry-site="1" style="background: #1a1a1a; color: #fff; font-size: 12px; padding: 8px 16px;">림인터네셔널 (2번) 소비기한 확인</button>
+          <button type="button" class="btn" data-expiry-site="2" style="background: #1a1a1a; color: #fff; font-size: 12px; padding: 8px 16px;">크린랩 (3번) 소비기한 확인</button>
+          <button type="button" class="btn" data-expiry-site="3" style="background: #1a1a1a; color: #fff; font-size: 12px; padding: 8px 16px;">몰테일 (4번) 소비기한 확인</button>
+        </div>
+      </div>
       <div style="margin-bottom: 12px;">
         <p class="msg ubase-notice" style="background:#fff3cd; color:#856404; border-left:4px solid #ffc107; margin-bottom: 8px;"><strong>공지:</strong> 환불완료·교환완료에 체크된 고객은 이미 처리가 끝난 건입니다. 해당 건의 환불, 교환, 잘못된정보 체크는 수정하지 마세요.</p>
         <p class="msg ubase-notice" style="background:#fff3cd; color:#856404; border-left:4px solid #ffc107;"><strong>공지:</strong> 탭스 1단계는 무조건 환불입니다. 탭스 1단계 제품이 포함된 고객의 경우 환불완료와 교환완료가 중복 체크되어 있을 수 있습니다. 이 경우 탭스 1단계는 환불완료로 처리되므로, 응대 시 이를 제외하고 응대해 주세요.</p>
@@ -279,6 +356,19 @@
     <button type="button" class="photo-lightbox-nav next" id="photoLightboxNext" aria-label="다음 사진">›</button>
     <img id="photoLightboxImg" src="" alt="확대 사진">
     <div class="photo-lightbox-counter" id="photoLightboxCounter" style="display: none;"></div>
+  </div>
+
+  <!-- 소비기한 확인 모달 -->
+  <div id="expiryModal" class="expiry-modal">
+    <div class="expiry-modal-content">
+      <div class="expiry-modal-header">
+        <h2 id="expiryModalTitle">대상제품 소비기한 확인</h2>
+        <button type="button" class="expiry-modal-close" id="expiryModalClose">&times;</button>
+      </div>
+      <div class="expiry-modal-body">
+        <img id="expiryModalImg" src="" alt="회수제품 리스트">
+      </div>
+    </div>
   </div>
 
   <script type="module">
@@ -1100,6 +1190,62 @@
             saveFlagsOnly(row);
           });
         });
+      });
+    }
+
+    // 소비기한 확인 모달
+    const expiryModal = document.getElementById('expiryModal');
+    const expiryModalClose = document.getElementById('expiryModalClose');
+    const expiryModalTitle = document.getElementById('expiryModalTitle');
+    const expiryModalImg = document.getElementById('expiryModalImg');
+    
+    // 각 몰별 사진 경로 (유베이스 어드민에서는 각 사이트의 resorce 폴더 경로 사용)
+    const expiryImagePaths = [
+      '../nutricia-x9fQ2kM7-1/resorce/회수제품 리스트_1_아이베.png',
+      '../nutricia-aL4pZ8Tq-2/resorce/회수제품 리스트_2_림인터네셔널.png',
+      '../nutricia-nu7VnCwR3H-3/resorce/회수제품 리스트_3_크린랩.png',
+      '../nutricia-MK2rP9dS-4/resorce/회수제품 리스트_4_몰테일.png'
+    ];
+    
+    // 소비기한 확인 버튼 이벤트
+    document.querySelectorAll('[data-expiry-site]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const siteIndex = parseInt(btn.getAttribute('data-expiry-site'), 10);
+        if (siteIndex >= 0 && siteIndex < PROJECT_LABELS.length) {
+          const siteName = PROJECT_LABELS[siteIndex];
+          const imagePath = expiryImagePaths[siteIndex];
+          
+          if (expiryModalTitle) {
+            expiryModalTitle.textContent = siteName + ' - 대상제품 소비기한 확인';
+          }
+          if (expiryModalImg) {
+            expiryModalImg.src = imagePath;
+            expiryModalImg.alt = siteName + ' 회수제품 리스트';
+          }
+          if (expiryModal) {
+            expiryModal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+          }
+        }
+      });
+    });
+    
+    // 모달 닫기
+    if (expiryModalClose) {
+      expiryModalClose.addEventListener('click', () => {
+        if (expiryModal) {
+          expiryModal.classList.remove('active');
+          document.body.style.overflow = '';
+        }
+      });
+    }
+    
+    if (expiryModal) {
+      expiryModal.addEventListener('click', (e) => {
+        if (e.target === expiryModal) {
+          expiryModal.classList.remove('active');
+          document.body.style.overflow = '';
+        }
       });
     }
   </script>
