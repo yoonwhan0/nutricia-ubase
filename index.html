@@ -183,18 +183,18 @@
       border: none;
       border-radius: 50%;
       font-size: 24px;
+      line-height: 1;
       cursor: pointer;
       z-index: 1;
       display: flex;
       align-items: center;
       justify-content: center;
-      line-height: 1;
       transition: background 0.2s;
     }
     .photo-lightbox-nav:hover { background: rgba(255,255,255,0.35); }
-    .photo-lightbox-nav:disabled { opacity: 0.3; cursor: not-allowed; }
     .photo-lightbox-nav.prev { left: 20px; }
     .photo-lightbox-nav.next { right: 20px; }
+    .photo-lightbox-nav:disabled { opacity: 0.3; cursor: not-allowed; }
     .photo-lightbox-counter {
       position: absolute;
       bottom: 20px;
@@ -275,10 +275,10 @@
   <!-- 사진 확대 라이트박스 (상세사진 클릭 시) -->
   <div id="photoLightbox" class="photo-lightbox" aria-hidden="true">
     <button type="button" class="photo-lightbox-close" id="photoLightboxClose" aria-label="닫기">&times;</button>
-    <button type="button" class="photo-lightbox-nav prev" id="photoLightboxPrev" aria-label="이전">&lt;</button>
-    <button type="button" class="photo-lightbox-nav next" id="photoLightboxNext" aria-label="다음">&gt;</button>
+    <button type="button" class="photo-lightbox-nav prev" id="photoLightboxPrev" aria-label="이전 사진">‹</button>
+    <button type="button" class="photo-lightbox-nav next" id="photoLightboxNext" aria-label="다음 사진">›</button>
     <img id="photoLightboxImg" src="" alt="확대 사진">
-    <div class="photo-lightbox-counter" id="photoLightboxCounter"></div>
+    <div class="photo-lightbox-counter" id="photoLightboxCounter" style="display: none;"></div>
   </div>
 
   <script type="module">
@@ -807,21 +807,24 @@
         html += '</div>';
         container.innerHTML = html;
         // 모든 사진 URL 수집
-        const allPhotos = [];
+        const allPhotoUrls = [];
         container.querySelectorAll('img[data-url]').forEach(img => {
           const url = img.getAttribute('data-url');
-          if (url) allPhotos.push(url);
+          if (url) allPhotoUrls.push(url);
         });
-        // 전역 변수로 저장 (라이트박스에서 사용)
-        window._currentPhotoList = allPhotos;
         
-        container.querySelectorAll('img[data-url]').forEach((img, idx) => {
+        // 전역 변수에 사진 목록 저장
+        window.currentPhotoList = allPhotoUrls;
+        window.currentPhotoIndex = -1;
+        
+        container.querySelectorAll('img[data-url]').forEach((img, index) => {
           img.style.cursor = 'pointer';
           img.addEventListener('click', (e) => {
             e.stopPropagation();
             const url = img.getAttribute('data-url');
             if (!url) return;
-            openPhotoLightbox(url, idx);
+            // showPhotoLightbox 함수 사용
+            showPhotoLightbox(index);
           });
         });
       }).catch(() => { container.innerHTML = '<p class="no-image">사진을 불러올 수 없습니다.</p>'; });
@@ -931,97 +934,103 @@
       if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) closeDetailModal(); });
     })();
 
-    let currentPhotoIndex = 0;
-    
-    function openPhotoLightbox(url, index = 0) {
+    // 사진 넘김 관련 전역 변수
+    window.currentPhotoList = [];
+    window.currentPhotoIndex = -1;
+
+    function updatePhotoLightboxNav() {
+      const prevBtn = document.getElementById('photoLightboxPrev');
+      const nextBtn = document.getElementById('photoLightboxNext');
+      const counter = document.getElementById('photoLightboxCounter');
+      const total = window.currentPhotoList.length;
+      const current = window.currentPhotoIndex + 1;
+      
+      if (prevBtn) prevBtn.disabled = (window.currentPhotoIndex <= 0);
+      if (nextBtn) nextBtn.disabled = (window.currentPhotoIndex >= total - 1);
+      if (counter && total > 1) {
+        counter.textContent = current + ' / ' + total;
+        counter.style.display = 'block';
+      } else if (counter) {
+        counter.style.display = 'none';
+      }
+    }
+
+    function showPhotoLightbox(index) {
       const lb = document.getElementById('photoLightbox');
       const lbImg = document.getElementById('photoLightboxImg');
-      const prevBtn = document.getElementById('photoLightboxPrev');
-      const nextBtn = document.getElementById('photoLightboxNext');
-      const counter = document.getElementById('photoLightboxCounter');
+      if (!lb || !lbImg || !window.currentPhotoList || window.currentPhotoList.length === 0) return;
       
-      if (!lb || !lbImg) return;
+      if (index < 0) index = 0;
+      if (index >= window.currentPhotoList.length) index = window.currentPhotoList.length - 1;
       
-      currentPhotoIndex = index;
-      const photos = window._currentPhotoList || [];
-      
-      if (photos.length > 0) {
-        lbImg.src = url;
-        lb.classList.add('show');
-        lb.setAttribute('aria-hidden', 'false');
-        
-        // 이전/다음 버튼 활성화 상태
-        if (prevBtn) prevBtn.disabled = currentPhotoIndex === 0;
-        if (nextBtn) nextBtn.disabled = currentPhotoIndex === photos.length - 1;
-        
-        // 카운터 표시
-        if (counter && photos.length > 1) {
-          counter.textContent = (currentPhotoIndex + 1) + ' / ' + photos.length;
-          counter.style.display = 'block';
-        } else if (counter) {
-          counter.style.display = 'none';
-        }
-      }
+      window.currentPhotoIndex = index;
+      lbImg.src = window.currentPhotoList[index];
+      lb.classList.add('show');
+      lb.setAttribute('aria-hidden', 'false');
+      updatePhotoLightboxNav();
     }
-    
-    function navigatePhoto(direction) {
-      const photos = window._currentPhotoList || [];
-      if (photos.length === 0) return;
-      
-      if (direction === 'prev' && currentPhotoIndex > 0) {
-        currentPhotoIndex--;
-      } else if (direction === 'next' && currentPhotoIndex < photos.length - 1) {
-        currentPhotoIndex++;
-      } else {
-        return;
-      }
-      
-      const lbImg = document.getElementById('photoLightboxImg');
-      const prevBtn = document.getElementById('photoLightboxPrev');
-      const nextBtn = document.getElementById('photoLightboxNext');
-      const counter = document.getElementById('photoLightboxCounter');
-      
-      if (lbImg) lbImg.src = photos[currentPhotoIndex];
-      if (prevBtn) prevBtn.disabled = currentPhotoIndex === 0;
-      if (nextBtn) nextBtn.disabled = currentPhotoIndex === photos.length - 1;
-      if (counter && photos.length > 1) {
-        counter.textContent = (currentPhotoIndex + 1) + ' / ' + photos.length;
-      }
-    }
-    
+
     function closePhotoLightbox() {
       const lb = document.getElementById('photoLightbox');
       const lbImg = document.getElementById('photoLightboxImg');
-      const counter = document.getElementById('photoLightboxCounter');
       if (lb) { lb.classList.remove('show'); lb.setAttribute('aria-hidden', 'true'); }
       if (lbImg) lbImg.src = '';
-      if (counter) counter.style.display = 'none';
-      currentPhotoIndex = 0;
-      window._currentPhotoList = [];
+      window.currentPhotoIndex = -1;
     }
-    
+
+    function prevPhoto() {
+      if (window.currentPhotoIndex > 0) {
+        showPhotoLightbox(window.currentPhotoIndex - 1);
+      }
+    }
+
+    function nextPhoto() {
+      if (window.currentPhotoList && window.currentPhotoIndex < window.currentPhotoList.length - 1) {
+        showPhotoLightbox(window.currentPhotoIndex + 1);
+      }
+    }
+
     (function initPhotoLightbox() {
       const lb = document.getElementById('photoLightbox');
       const closeBtn = document.getElementById('photoLightboxClose');
       const prevBtn = document.getElementById('photoLightboxPrev');
       const nextBtn = document.getElementById('photoLightboxNext');
+      const lbImg = document.getElementById('photoLightboxImg');
       
       if (closeBtn) closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closePhotoLightbox(); });
-      if (prevBtn) prevBtn.addEventListener('click', (e) => { e.stopPropagation(); navigatePhoto('prev'); });
-      if (nextBtn) nextBtn.addEventListener('click', (e) => { e.stopPropagation(); navigatePhoto('next'); });
-      if (lb) {
-        lb.addEventListener('click', (e) => {
-          if (e.target === lb || e.target.id === 'photoLightboxImg') closePhotoLightbox();
-        });
-      }
+      if (prevBtn) prevBtn.addEventListener('click', (e) => { e.stopPropagation(); prevPhoto(); });
+      if (nextBtn) nextBtn.addEventListener('click', (e) => { e.stopPropagation(); nextPhoto(); });
       
-      // 키보드 네비게이션
+      // 키보드 화살표 키 지원
       document.addEventListener('keydown', (e) => {
         if (!lb || !lb.classList.contains('show')) return;
-        if (e.key === 'ArrowLeft') navigatePhoto('prev');
-        else if (e.key === 'ArrowRight') navigatePhoto('next');
-        else if (e.key === 'Escape') closePhotoLightbox();
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          prevPhoto();
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          nextPhoto();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          closePhotoLightbox();
+        }
       });
+      
+      // 라이트박스 배경 클릭 시에만 닫기 (이미지나 버튼 클릭은 제외)
+      if (lb) {
+        lb.addEventListener('click', (e) => {
+          // 이미지, 버튼, 카운터를 클릭한 경우가 아니면 닫기
+          if (e.target === lb) {
+            closePhotoLightbox();
+          }
+        });
+      }
+      // 이미지 클릭 시 이벤트 전파 중지 (라이트박스가 닫히지 않도록)
+      if (lbImg) {
+        lbImg.addEventListener('click', (e) => {
+          e.stopPropagation();
+        });
+      }
     })();
 
     async function saveFlagsOnly(row) {
