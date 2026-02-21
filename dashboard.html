@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>현황 대시보드 — 유베이스</title>
+  <style>
+    * { box-sizing: border-box; font-family: 'Malgun Gothic', sans-serif; }
+    body { margin: 0; padding: 0; background: #f5f5f5; }
+    .dashboard-wrap { max-width: 1400px; margin: 0 auto; padding: 20px; }
+    .dashboard-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+    .dashboard-header h1 { margin: 0; font-size: 18px; color: #333; }
+    .back-link { color: #06c; text-decoration: none; font-size: 14px; }
+    .back-link:hover { text-decoration: underline; }
+    .dashboard-section { margin-top: 24px; padding-top: 24px; border-top: 1px solid #ddd; }
+    .dashboard-section:first-of-type { margin-top: 0; padding-top: 0; border-top: none; }
+    .dashboard-section h2 { font-size: 18px; margin: 0 0 16px 0; color: #17a; font-weight: 600; }
+    .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 16px; }
+    @media (max-width: 1200px) { .dashboard-grid { grid-template-columns: 1fr; } }
+    .dashboard-card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .dashboard-card h3 { font-size: 16px; margin: 0 0 12px 0; color: #333; }
+    .dashboard-card .hint { font-size: 12px; color: #666; margin-bottom: 12px; line-height: 1.5; }
+    .dashboard-card .toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .dashboard-card #chartContainer { position: relative; height: 300px; width: 100%; }
+    .dashboard-card #chartLoading { padding: 20px; color: #666; font-size: 14px; }
+    .dashboard-card #statsTable { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 12px; }
+    .dashboard-card #statsTable th, .dashboard-card #statsTable td { border: 1px solid #ddd; padding: 6px 4px; text-align: center; white-space: nowrap; }
+    .dashboard-card #statsTable th { background: #f5f5f5; font-weight: 600; font-size: 11px; }
+    .dashboard-card #statsTable tr:hover { background: #f9f9f9; }
+    .dashboard-card #statsLoading { padding: 20px; color: #666; font-size: 14px; }
+    .dashboard-card #simpleStatsResult { margin-top: 12px; }
+    .msg { padding: 10px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; }
+    .msg.info { background: #e7f3ff; color: #004; }
+    .msg.error { background: #ffe0e0; color: #800; }
+    select { padding: 8px 12px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; }
+    button { padding: 8px 16px; background: #17a; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    button:hover { background: #158; }
+    button:disabled { background: #999; cursor: not-allowed; }
+    #dashboardInitMsg { padding: 16px; background: #e7f3ff; color: #004; border-radius: 8px; margin-bottom: 20px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="dashboard-wrap">
+    <div class="dashboard-header">
+      <h1>현황 대시보드 (접수 추이 · 간단 통계 · 몰별 통계)</h1>
+      <a href="index.html" class="back-link">← 유베이스 접수 목록으로</a>
+    </div>
+    <div id="dashboardInitMsg">대시보드 불러오는 중… (접수 추이, 간단 통계, 몰별 통계를 한 번에 조회합니다)</div>
+
+    <div class="dashboard-section">
+      <div class="dashboard-grid">
+        <div class="dashboard-card">
+          <h3>접수 추이 (일별)</h3>
+          <p class="hint">접수일시 기준으로 일별 접수 건수를 선 그래프로 표시합니다. (4개 사이트 합산)</p>
+          <div class="toolbar">
+            <label>기간:</label>
+            <select id="chartDaysSelect">
+              <option value="7">최근 7일</option>
+              <option value="14">최근 14일</option>
+              <option value="30" selected>최근 30일</option>
+              <option value="60">최근 60일</option>
+              <option value="90">최근 90일</option>
+            </select>
+            <button type="button" id="chartLoadBtn">그래프 보기</button>
+          </div>
+          <div id="chartLoading" style="display:none;">불러오는 중…</div>
+          <div id="chartContainer" style="display:none;"><canvas id="trendChart"></canvas></div>
+        </div>
+
+        <div class="dashboard-card">
+          <h3>간단 통계</h3>
+          <p class="hint">전체 접수 건수와 업체별 접수 건수를 간단하게 조회합니다.</p>
+          <div class="toolbar">
+            <button type="button" id="simpleStatsBtn">간단 통계 조회</button>
+          </div>
+          <div id="simpleStatsResult"></div>
+        </div>
+      </div>
+
+      <div class="dashboard-card" style="margin-top: 24px;">
+        <h3>몰별 접수 통계</h3>
+        <p class="hint">4개 몰별로 접수 건수, 환불완료/교환완료 건수, 각종 체크 상태 건수를 조회합니다.</p>
+        <div class="toolbar">
+          <button type="button" id="statsLoadBtn">통계 조회</button>
+          <button type="button" id="statsDownloadBtn" style="background:#28a745; display:none;">CSV 다운로드</button>
+        </div>
+        <div id="statsLoading" style="display:none;">통계 조회 중…</div>
+        <table id="statsTable" style="display:none;">
+          <thead>
+            <tr>
+              <th>몰</th>
+              <th>전체<br>접수</th>
+              <th>처리<br>완료</th>
+              <th>미처리<br>건수</th>
+              <th>환불완료<br>(건수/처리율)</th>
+              <th>교환완료<br>(건수/처리율)</th>
+              <th>증빙오류<br>(반려)</th>
+              <th>환불<br>체크</th>
+              <th>환불<br>처리예정</th>
+              <th>교환<br>체크</th>
+              <th>교환<br>처리예정</th>
+              <th>체크<br>없음</th>
+              <th>잘못된<br>정보</th>
+              <th>6캔<br>이상</th>
+            </tr>
+          </thead>
+          <tbody id="statsTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+    import { getDatabase, ref as dbRef, get, child } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCxNwnAzMn0JUkHGDXgY4taTPJYeABDohg",
+      authDomain: "eibe-nutricia.firebaseapp.com",
+      databaseURL: "https://eibe-nutricia-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "eibe-nutricia",
+      storageBucket: "eibe-nutricia.firebasestorage.app",
+      messagingSenderId: "605906618980",
+      appId: "1:605906618980:web:d947540696a573c4856d71"
+    };
+
+    let app, db, auth;
+    try {
+      app = initializeApp(firebaseConfig);
+      db = getDatabase(app);
+      auth = getAuth(app);
+    } catch (err) {
+      document.getElementById('dashboardInitMsg').textContent = 'Firebase 초기화 실패: ' + (err.message || err);
+    }
+
+    const PREFIXES_LIST = ['nutricia-x9fQ2kM7-1', 'nutricia-aL4pZ8Tq-2', 'nutricia-nu7VnCwR3H-3', 'nutricia-MK2rP9dS-4'];
+    const PROJECT_STATS_LABELS = {
+      'nutricia-x9fQ2kM7-1': '아이베',
+      'nutricia-aL4pZ8Tq-2': '림인터네셔널',
+      'nutricia-nu7VnCwR3H-3': '크린랩',
+      'nutricia-MK2rP9dS-4': '몰테일'
+    };
+    const SIMPLE_STATS_LABELS = { ...PROJECT_STATS_LABELS };
+
+    async function fetchMetaForPrefix(prefix) {
+      const snap = await get(child(dbRef(db), prefix + '/submissions_meta'));
+      const items = [];
+      if (snap.exists()) {
+        snap.forEach((dateSnap) => {
+          const dateKey = dateSnap.key;
+          if (!/^\d{8}$/.test(dateKey)) return;
+          dateSnap.forEach((inner) => {
+            items.push({
+              _prefix: prefix,
+              id: inner.key,
+              _dateKey: dateKey,
+              _isLegacy: false,
+              ...inner.val()
+            });
+          });
+        });
+      }
+      return items;
+    }
+
+    function toDateLabel(ts) {
+      if (ts == null) return '';
+      const d = typeof ts === 'number' ? new Date(ts) : new Date(ts);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+
+    // ——— 접수 추이 ———
+    const chartDaysSelect = document.getElementById('chartDaysSelect');
+    const chartLoadBtn = document.getElementById('chartLoadBtn');
+    const chartContainer = document.getElementById('chartContainer');
+    const chartLoading = document.getElementById('chartLoading');
+    let trendChartInstance = null;
+
+    async function loadChart() {
+      if (!db || !chartLoadBtn) return;
+      const days = parseInt(chartDaysSelect?.value || '30', 10) || 30;
+      chartLoading.style.display = 'block';
+      chartContainer.style.display = 'none';
+      if (trendChartInstance) {
+        trendChartInstance.destroy();
+        trendChartInstance = null;
+      }
+      try {
+        let allItems = [];
+        for (const prefix of PREFIXES_LIST) {
+          const items = await fetchMetaForPrefix(prefix);
+          allItems = allItems.concat(items);
+        }
+        const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+        const filtered = allItems.filter((it) => (it.createdAt != null ? Number(it.createdAt) : 0) >= cutoff);
+        const byDate = {};
+        filtered.forEach((it) => {
+          let ts = it.createdAt != null ? Number(it.createdAt) : 0;
+          if (ts > 0 && ts < 1e12) ts *= 1000;
+          const key = toDateLabel(ts);
+          byDate[key] = (byDate[key] || 0) + 1;
+        });
+        const sortedDates = Object.keys(byDate).sort();
+        const counts = sortedDates.map((d) => byDate[d]);
+        chartLoading.style.display = 'none';
+        chartContainer.style.display = 'block';
+        const ctx = document.getElementById('trendChart').getContext('2d');
+        trendChartInstance = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: sortedDates,
+            datasets: [{
+              label: '접수 건수',
+              data: counts,
+              borderColor: 'rgb(23, 119, 170)',
+              backgroundColor: 'rgba(23, 119, 170, 0.1)',
+              fill: true,
+              tension: 0.2
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { title: { display: true, text: '날짜' }, ticks: { maxRotation: 45 } },
+              y: { beginAtZero: true, title: { display: true, text: '건수' }, ticks: { stepSize: 1 } }
+            }
+          }
+        });
+      } catch (err) {
+        chartLoading.style.display = 'block';
+        chartLoading.textContent = '그래프 로드 실패: ' + (err.message || err);
+        chartContainer.style.display = 'none';
+      }
+    }
+
+    if (chartLoadBtn && db) chartLoadBtn.addEventListener('click', loadChart);
+
+    // ——— 간단 통계 ———
+    const simpleStatsBtn = document.getElementById('simpleStatsBtn');
+    const simpleStatsResult = document.getElementById('simpleStatsResult');
+
+    async function loadSimpleStats() {
+      if (!db || !simpleStatsResult) return;
+      simpleStatsResult.innerHTML = '<div class="msg info">통계 조회 중…</div>';
+      if (simpleStatsBtn) simpleStatsBtn.disabled = true;
+      try {
+        let totalAll = 0;
+        const counts = {};
+        for (const prefix of PREFIXES_LIST) {
+          const items = await fetchMetaForPrefix(prefix);
+          const label = SIMPLE_STATS_LABELS[prefix] || prefix;
+          const count = items.length;
+          counts[label] = count;
+          totalAll += count;
+        }
+        let html = '<div style="background:#f9f9f9; padding:20px; border-radius:8px; margin-top:12px;">';
+        html += '<div style="font-size:24px; font-weight:600; color:#0a5; margin-bottom:20px; text-align:center;">총 <span style="font-size:32px;">' + totalAll.toLocaleString() + '</span>건</div>';
+        html += '<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-top:20px;">';
+        for (const prefix of PREFIXES_LIST) {
+          const label = SIMPLE_STATS_LABELS[prefix] || prefix;
+          const count = counts[label] || 0;
+          html += '<div style="background:#fff; padding:16px; border-radius:6px; border:1px solid #ddd; text-align:center;">';
+          html += '<div style="font-size:12px; color:#666; margin-bottom:8px;">' + label + '</div>';
+          html += '<div style="font-size:20px; font-weight:600; color:#333;">' + count.toLocaleString() + '건</div></div>';
+        }
+        html += '</div></div>';
+        simpleStatsResult.innerHTML = html;
+      } catch (err) {
+        simpleStatsResult.innerHTML = '<div class="msg error">통계 조회 실패: ' + (err.message || err) + '</div>';
+      } finally {
+        if (simpleStatsBtn) simpleStatsBtn.disabled = false;
+      }
+    }
+
+    if (simpleStatsBtn && db) simpleStatsBtn.addEventListener('click', loadSimpleStats);
+
+    // ——— 몰별 접수 통계 ———
+    const statsLoadBtn = document.getElementById('statsLoadBtn');
+    const statsTable = document.getElementById('statsTable');
+    const statsTableBody = document.getElementById('statsTableBody');
+    const statsLoading = document.getElementById('statsLoading');
+    const statsDownloadBtn = document.getElementById('statsDownloadBtn');
+
+    async function loadMallStats() {
+      if (!db || !statsLoadBtn) return;
+      statsLoading.style.display = 'block';
+      statsTable.style.display = 'none';
+      statsTableBody.innerHTML = '';
+      statsLoadBtn.disabled = true;
+      try {
+        const stats = {};
+        for (const prefix of PREFIXES_LIST) {
+          const items = await fetchMetaForPrefix(prefix);
+          const label = PROJECT_STATS_LABELS[prefix] || prefix;
+          let total = items.length;
+          let refundComplete = 0, exchangeComplete = 0, proofError = 0;
+          let refundDone = 0, exchangeDone = 0, invalidInfo = 0, sixCansOrMore = 0;
+          let processed = 0, unprocessed = 0, refundDoneOnly = 0, exchangeDoneOnly = 0, noCheck = 0;
+          items.forEach(item => {
+            if (item.refundComplete) refundComplete++;
+            if (item.exchangeComplete) exchangeComplete++;
+            if (item.proofError) proofError++;
+            if (item.refundDone) refundDone++;
+            if (item.exchangeDone) exchangeDone++;
+            if (item.invalidInfo) invalidInfo++;
+            if (item.sixCansOrMore) sixCansOrMore++;
+            if (item.refundComplete || item.exchangeComplete) processed++;
+            else unprocessed++;
+            if (item.refundDone && !item.refundComplete) refundDoneOnly++;
+            if (item.exchangeDone && !item.exchangeComplete) exchangeDoneOnly++;
+            if (!item.refundDone && !item.exchangeDone) noCheck++;
+          });
+          stats[prefix] = {
+            label, total, refundComplete, exchangeComplete, proofError,
+            refundDone, exchangeDone, invalidInfo, sixCansOrMore,
+            processed, unprocessed, refundDoneOnly, exchangeDoneOnly, noCheck
+          };
+        }
+        let html = '';
+        let totalAll = 0, totalRefundComplete = 0, totalExchangeComplete = 0, totalProofError = 0;
+        let totalRefundDone = 0, totalExchangeDone = 0, totalInvalidInfo = 0, totalSixCans = 0;
+        let totalProcessed = 0, totalUnprocessed = 0, totalRefundDoneOnly = 0, totalExchangeDoneOnly = 0, totalNoCheck = 0;
+        for (const prefix of PREFIXES_LIST) {
+          const s = stats[prefix];
+          const refundCompleteRate = s.total > 0 ? ((s.refundComplete / s.total) * 100).toFixed(1) : '0.0';
+          const exchangeCompleteRate = s.total > 0 ? ((s.exchangeComplete / s.total) * 100).toFixed(1) : '0.0';
+          const processedRate = s.total > 0 ? ((s.processed / s.total) * 100).toFixed(1) : '0.0';
+          html += '<tr>';
+          html += '<td><strong>' + s.label + '</strong></td>';
+          html += '<td>' + s.total.toLocaleString() + '</td>';
+          html += '<td style="color:#0a5; font-weight:600;">' + s.processed.toLocaleString() + '<br><span style="font-size:11px; color:#666;">(' + processedRate + '%)</span></td>';
+          html += '<td style="color:#c00; font-weight:600;">' + s.unprocessed.toLocaleString() + '</td>';
+          html += '<td>' + s.refundComplete.toLocaleString() + ' <span style="color:#0a5; font-weight:600;">(' + refundCompleteRate + '%)</span></td>';
+          html += '<td>' + s.exchangeComplete.toLocaleString() + ' <span style="color:#0a5; font-weight:600;">(' + exchangeCompleteRate + '%)</span></td>';
+          html += '<td>' + (s.proofError || 0).toLocaleString() + '</td>';
+          html += '<td>' + s.refundDone.toLocaleString() + '</td>';
+          html += '<td style="color:#f60; font-weight:600;">' + s.refundDoneOnly.toLocaleString() + '</td>';
+          html += '<td>' + s.exchangeDone.toLocaleString() + '</td>';
+          html += '<td style="color:#f60; font-weight:600;">' + s.exchangeDoneOnly.toLocaleString() + '</td>';
+          html += '<td style="color:#999;">' + s.noCheck.toLocaleString() + '</td>';
+          html += '<td>' + s.invalidInfo.toLocaleString() + '</td>';
+          html += '<td>' + s.sixCansOrMore.toLocaleString() + '</td>';
+          html += '</tr>';
+          totalAll += s.total;
+          totalRefundComplete += s.refundComplete;
+          totalExchangeComplete += s.exchangeComplete;
+          totalProofError += (s.proofError || 0);
+          totalProcessed += s.processed;
+          totalUnprocessed += s.unprocessed;
+          totalRefundDone += s.refundDone;
+          totalExchangeDone += s.exchangeDone;
+          totalInvalidInfo += s.invalidInfo;
+          totalSixCans += s.sixCansOrMore;
+          totalRefundDoneOnly += s.refundDoneOnly;
+          totalExchangeDoneOnly += s.exchangeDoneOnly;
+          totalNoCheck += s.noCheck;
+        }
+        const totalRefundCompleteRate = totalAll > 0 ? ((totalRefundComplete / totalAll) * 100).toFixed(1) : '0.0';
+        const totalExchangeCompleteRate = totalAll > 0 ? ((totalExchangeComplete / totalAll) * 100).toFixed(1) : '0.0';
+        const totalProcessedRate = totalAll > 0 ? ((totalProcessed / totalAll) * 100).toFixed(1) : '0.0';
+        html += '<tr style="background:#f0f0f0; font-weight:600;">';
+        html += '<td><strong>합계</strong></td>';
+        html += '<td>' + totalAll.toLocaleString() + '</td>';
+        html += '<td style="color:#0a5;">' + totalProcessed.toLocaleString() + '<br><span style="font-size:11px; color:#666;">(' + totalProcessedRate + '%)</span></td>';
+        html += '<td style="color:#c00;">' + totalUnprocessed.toLocaleString() + '</td>';
+        html += '<td>' + totalRefundComplete.toLocaleString() + ' <span style="color:#0a5;">(' + totalRefundCompleteRate + '%)</span></td>';
+        html += '<td>' + totalExchangeComplete.toLocaleString() + ' <span style="color:#0a5;">(' + totalExchangeCompleteRate + '%)</span></td>';
+        html += '<td>' + totalProofError.toLocaleString() + '</td>';
+        html += '<td>' + totalRefundDone.toLocaleString() + '</td>';
+        html += '<td style="color:#f60;">' + totalRefundDoneOnly.toLocaleString() + '</td>';
+        html += '<td>' + totalExchangeDone.toLocaleString() + '</td>';
+        html += '<td style="color:#f60;">' + totalExchangeDoneOnly.toLocaleString() + '</td>';
+        html += '<td style="color:#999;">' + totalNoCheck.toLocaleString() + '</td>';
+        html += '<td>' + totalInvalidInfo.toLocaleString() + '</td>';
+        html += '<td>' + totalSixCans.toLocaleString() + '</td>';
+        html += '</tr>';
+        statsTableBody.innerHTML = html;
+        statsLoading.style.display = 'none';
+        statsTable.style.display = 'table';
+        window._statsData = stats;
+        window._statsTotals = { totalAll, totalRefundComplete, totalExchangeComplete, totalProofError, totalRefundDone, totalExchangeDone, totalInvalidInfo, totalSixCans, totalProcessed, totalUnprocessed, totalRefundDoneOnly, totalExchangeDoneOnly, totalNoCheck, totalRefundCompleteRate, totalExchangeCompleteRate, totalProcessedRate };
+        if (statsDownloadBtn) statsDownloadBtn.style.display = 'inline-block';
+      } catch (err) {
+        statsLoading.style.display = 'block';
+        statsLoading.textContent = '통계 조회 실패: ' + (err.message || err);
+        statsTable.style.display = 'none';
+      }
+      statsLoadBtn.disabled = false;
+    }
+
+    if (statsLoadBtn && db) statsLoadBtn.addEventListener('click', loadMallStats);
+
+    if (statsDownloadBtn) {
+      statsDownloadBtn.addEventListener('click', () => {
+        if (!window._statsData || !window._statsTotals) {
+          alert('먼저 통계를 조회해주세요.');
+          return;
+        }
+        function csvEscape(val) {
+          const s = val == null ? '' : String(val);
+          if (s.includes('"') || s.includes(',') || s.includes('\n') || s.includes('\r')) return '"' + s.replace(/"/g, '""') + '"';
+          return s;
+        }
+        const t = window._statsTotals;
+        const lines = [];
+        lines.push(['몰','전체 접수','처리 완료','처리 완료율(%)','미처리 건수','환불완료 건수','환불완료 처리율(%)','교환완료 건수','교환완료 처리율(%)','증빙오류(반려)','환불 체크','환불 처리예정','교환 체크','교환 처리예정','체크 없음','잘못된정보','6캔이상'].map(csvEscape).join(','));
+        for (const prefix of PREFIXES_LIST) {
+          const s = window._statsData[prefix];
+          if (!s) continue;
+          const refundCompleteRate = s.total > 0 ? ((s.refundComplete / s.total) * 100).toFixed(1) : '0.0';
+          const exchangeCompleteRate = s.total > 0 ? ((s.exchangeComplete / s.total) * 100).toFixed(1) : '0.0';
+          const processedRate = s.total > 0 ? ((s.processed / s.total) * 100).toFixed(1) : '0.0';
+          lines.push([s.label, s.total, s.processed, processedRate, s.unprocessed, s.refundComplete, refundCompleteRate, s.exchangeComplete, exchangeCompleteRate, (s.proofError || 0), s.refundDone, s.refundDoneOnly, s.exchangeDone, s.exchangeDoneOnly, s.noCheck, s.invalidInfo, s.sixCansOrMore].map(csvEscape).join(','));
+        }
+        lines.push(['합계', t.totalAll, t.totalProcessed, t.totalProcessedRate, t.totalUnprocessed, t.totalRefundComplete, t.totalRefundCompleteRate, t.totalExchangeComplete, t.totalExchangeCompleteRate, t.totalProofError, t.totalRefundDone, t.totalRefundDoneOnly, t.totalExchangeDone, t.totalExchangeDoneOnly, t.totalNoCheck, t.totalInvalidInfo, t.totalSixCans].map(csvEscape).join(','));
+        const bom = '\uFEFF';
+        const csv = bom + lines.join('\r\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = '몰별_접수_통계_' + new Date().toISOString().slice(0, 10) + '.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      });
+    }
+
+    // ——— 인증 후 최초 진입 시 3개 한 번에 로드 ———
+    const initMsg = document.getElementById('dashboardInitMsg');
+    function runInitialLoad() {
+      if (!db) return;
+      (async () => {
+        try {
+          await loadChart();
+          await loadSimpleStats();
+          await loadMallStats();
+          if (initMsg) initMsg.style.display = 'none';
+        } catch (e) {
+          if (initMsg) initMsg.textContent = '일부 로드 실패: ' + (e.message || e);
+        }
+      })();
+    }
+
+    if (auth) {
+      onAuthStateChanged(auth, (user) => {
+        if (user) {
+          runInitialLoad();
+        } else {
+          if (initMsg) {
+            initMsg.innerHTML = '대시보드는 <strong>유베이스 로그인 후</strong> 이용할 수 있습니다.<br>' +
+              '유베이스 접수 목록에서 먼저 로그인한 뒤, <strong>현황확인하기(대시보드)</strong> 버튼을 눌러주세요.<br>' +
+              '<a href="index.html" style="display:inline-block; margin-top:12px; color:#17a;">→ 유베이스 로그인 페이지로 이동</a>';
+            initMsg.style.background = '#fff3cd';
+            initMsg.style.color = '#856404';
+          }
+        }
+      });
+    } else if (initMsg) {
+      initMsg.textContent = 'Firebase를 사용할 수 없습니다.';
+    }
+  </script>
+</body>
+</html>

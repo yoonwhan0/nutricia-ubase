@@ -56,6 +56,23 @@
     }
     .admin-table .cell-text, .admin-table td[data-fulltext] { cursor: default; }
 
+    /* 고객 조회 툴바 버튼 통일 (크기·정렬) */
+    .admin-search .btn,
+    .admin-search a.btn {
+      padding: 8px 14px;
+      font-size: 13px;
+      min-height: 36px;
+      box-sizing: border-box;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      white-space: nowrap;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .admin-search { align-items: center; }
+
     /* 소비기한 확인 모달 */
     .expiry-modal {
       display: none;
@@ -311,6 +328,7 @@
           <button type="button" class="btn btn-primary" id="searchBtn" style="width: auto;">검색</button>
           <button type="button" class="btn" id="searchResetBtn" style="width: auto; background: #777; color: #fff;">초기화</button>
           <button type="button" class="btn" id="listRefreshBtn" style="width: auto; background: #0a5; color: #fff;">목록 새로고침</button>
+          <a href="dashboard.html" target="_blank" rel="noopener" class="btn" style="width: auto; background: #17a; color: #fff;">현황확인하기(대시보드)</a>
         </div>
       </div>
       <div class="detail-section" style="margin-bottom: 12px; padding: 12px; background: #f9f9f9; border-radius: 8px; border: 1px solid #ddd;">
@@ -659,7 +677,7 @@
         '<th>사진 보기</th>' +
         '<th>이름</th><th>연락처</th><th>주소</th><th>상세 주소</th><th>개인통관부호</th>' +
         '<th>접수ID</th><th>접수일시</th>' +
-        '<th>환불</th><th>교환</th><th>잘못된정보</th><th>6캔이상</th><th>환불완료</th><th>교환완료</th>' +
+        '<th>환불</th><th>교환</th><th>잘못된정보</th><th>6캔이상</th><th>환불완료</th><th>교환완료</th><th>증빙오류(반려)</th><th>사유</th>' +
         '<th>은행</th><th>계좌번호</th><th>계좌명</th><th>환불금액</th><th>환불(교환)캔수</th>' +
         '<th>제품명(1)</th><th>제조번호(1)</th><th>고유번호(1)</th>' +
         '<th>제품명(2)</th><th>제조번호(2)</th><th>고유번호(2)</th>' +
@@ -711,6 +729,8 @@
         rowsHtml += '<td><label><input type="checkbox" class="list-cb-sixCans" data-field="sixCansOrMore"' + sixCansC + '> 6캔이상</label></td>';
         rowsHtml += '<td class="cell-flag">' + (d.refundComplete ? 'Y' : '-') + '</td>';
         rowsHtml += '<td class="cell-flag">' + (d.exchangeComplete ? 'Y' : '-') + '</td>';
+        rowsHtml += '<td class="cell-flag">' + (d.proofError ? 'Y' : '-') + '</td>';
+        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.proofErrorReason || '-') + '</span></td>';
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.bankName || '-') + '</span></td>';
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.bankAccountNumber || '-') + '</span></td>';
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.bankAccountName || '-') + '</span></td>';
@@ -854,7 +874,8 @@
         '<label><input type="checkbox" id="dm-cb-refund" data-field="refundDone"' + rC + dmLockedAttr + '> 환불</label>' +
         '<label><input type="checkbox" id="dm-cb-exchange" data-field="exchangeDone"' + eC + dmLockedAttr + '> 교환</label>' +
         '<label><input type="checkbox" id="dm-cb-invalid" data-field="invalidInfo"' + iC + dmLockedAttr + '> 잘못된정보</label>' +
-        '<label><input type="checkbox" id="dm-cb-sixCans" data-field="sixCansOrMore"' + sC + '> 6캔이상</label>';
+        '<label><input type="checkbox" id="dm-cb-sixCans" data-field="sixCansOrMore"' + sC + '> 6캔이상</label>' +
+        '<p style="font-size:12px;margin-top:8px;color:#555;">환불완료 ' + (d.refundComplete ? 'Y' : '-') + ' / 교환완료 ' + (d.exchangeComplete ? 'Y' : '-') + ' / 증빙오류(반려) ' + (d.proofError ? 'Y' : '-') + (d.proofErrorReason ? ' — ' + escapeHtml(d.proofErrorReason) : '') + '</p>';
       document.getElementById('detailModalPhotos').textContent = '사진 불러오는 중…';
       modal.classList.add('show');
       modal.setAttribute('aria-hidden', 'false');
