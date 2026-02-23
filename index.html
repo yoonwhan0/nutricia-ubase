@@ -377,7 +377,7 @@
         </div>
       </div>
       <div style="margin-bottom: 12px;">
-        <p class="msg ubase-notice" style="background:#fff3cd; color:#856404; border-left:4px solid #ffc107; margin-bottom: 8px;"><strong>공지:</strong> 환불완료·교환완료에 체크된 고객은 이미 처리가 끝난 건입니다. 해당 건의 환불, 교환, 잘못된정보 체크는 수정하지 마세요.</p>
+        <p class="msg ubase-notice" style="background:#ffe0e0; color:#721c24; border-left:4px solid #dc3545; margin-bottom: 8px;"><strong>공지:</strong> 붉은음영 처리된 고객은 고유번호를 중복으로 업로드한 고객입니다. 업무에 참고 부탁드립니다.</p>
         <p class="msg ubase-notice" style="background:#fff3cd; color:#856404; border-left:4px solid #ffc107;"><strong>공지:</strong> 탭스 1단계는 무조건 환불입니다. 탭스 1단계 제품이 포함된 고객의 경우 환불완료와 교환완료가 중복 체크되어 있을 수 있습니다. 이 경우 탭스 1단계는 환불완료로 처리되므로, 응대 시 이를 제외하고 응대해 주세요.</p>
       </div>
       <div id="listMessage"></div>
@@ -487,6 +487,7 @@
     const PAGE_SIZE = 30;
     let allItems = [];
     let duplicateSubmissionIds = new Set(); // 중복된 고유번호를 가진 접수 ID Set
+    let duplicateUniqueCodes = new Set(); // 다른 고객이 사용한 고유번호 Set
     let paginationPage = 1;
     let searchFilters = { name: '', contact: '', customsCode: '', uniqueCode: '' };
     let metaSnaps = {};
@@ -632,12 +633,18 @@
       if (Object.keys(metaSnaps).length !== PREFIXES.length) return;
       allItems = buildItemsFromMetaSnaps();
       
-      // 고유번호 중복 검사 (자동)
+      // 고유번호 중복 검사 (자동) - 다른 고객이 사용한 경우만
       duplicateSubmissionIds.clear();
-      const uniqueCodeMap = new Map(); // uniqueCode -> [{ submissionId, dateKey, prefix }]
+      duplicateUniqueCodes.clear();
+      const uniqueCodeMap = new Map(); // uniqueCode -> [{ submissionId, dateKey, prefix, contact, key }]
+      
+      function normalizeContactForDup(c) {
+        return (c || '').replace(/\D/g, '').trim();
+      }
       
       allItems.forEach((item) => {
         const u = getUniqueCodesArray(item);
+        const contact = normalizeContactForDup(item.contact);
         u.forEach((uc) => {
           const code = (uc.uniqueCode || '').trim();
           if (!code) return;
@@ -650,18 +657,27 @@
             submissionId: item.id,
             dateKey: item._dateKey || '',
             prefix: item._prefix || '',
+            contact: contact,
             key: key
           });
         });
       });
       
-      // 중복된 고유번호를 가진 접수 ID 수집 (2개 이상의 접수에서 사용)
+      // 중복된 고유번호를 가진 접수 ID 수집 (다른 고객이 사용한 경우만)
       uniqueCodeMap.forEach((submissions, code) => {
         if (submissions.length >= 2) {
-          // 모든 접수 ID를 중복 목록에 추가
-          submissions.forEach((sub) => {
-            duplicateSubmissionIds.add(sub.key);
-          });
+          // 연락처 기준으로 다른 고객인지 확인
+          const contacts = new Set(submissions.map(s => s.contact).filter(c => c));
+          const isDifferentCustomer = contacts.size > 1;
+          
+          if (isDifferentCustomer) {
+            // 다른 고객이 사용한 고유번호 기록
+            duplicateUniqueCodes.add(code);
+            // 다른 고객이 사용한 경우만 중복 목록에 추가
+            submissions.forEach((sub) => {
+              duplicateSubmissionIds.add(sub.key);
+            });
+          }
         }
       });
       
@@ -826,7 +842,10 @@
         for (let i = 0; i < 12; i++) {
           rowsHtml += '<td><span class="cell-text">' + escapeHtml(u12[i].productName || '-') + '</span></td>';
           rowsHtml += '<td><span class="cell-text">' + escapeHtml(u12[i].batchNumber || '-') + '</span></td>';
-          rowsHtml += '<td' + duplicateCellStyle + '><span class="cell-text">' + escapeHtml(u12[i].uniqueCode || '-') + '</span></td>';
+          const uniqueCode = (u12[i].uniqueCode || '').trim();
+          const isUniqueCodeDuplicate = uniqueCode && duplicateUniqueCodes.has(uniqueCode);
+          const uniqueCodeCellStyle = isUniqueCodeDuplicate ? ' style="background-color: #ffe0e0;"' : '';
+          rowsHtml += '<td' + uniqueCodeCellStyle + '><span class="cell-text">' + escapeHtml(uniqueCode || '-') + '</span></td>';
         }
         rowsHtml += '</tr>';
       });
