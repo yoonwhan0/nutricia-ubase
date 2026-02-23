@@ -505,11 +505,36 @@
       return s === q || s === '82' + q || s.replace(/^82/, '') === q;
     }
 
+    // 연결 상태 디바운싱: 짧은 연결 끊김은 무시 (1초 이상 끊겨야 비정상 표시)
+    let statusTimeout = null;
+    let lastConnectedState = true;
+    
     function setStatus(connected) {
       if (!statusDotAdmin || !statusTextAdmin) return;
-      statusDotAdmin.classList.remove('ok', 'off');
-      statusDotAdmin.classList.add(connected ? 'ok' : 'off');
-      statusTextAdmin.textContent = connected ? '서버 연결 정상' : '서버 연결 안 됨';
+      
+      // 연결 상태가 변경되었을 때만 처리
+      if (connected === lastConnectedState) return;
+      lastConnectedState = connected;
+      
+      // 기존 타이머 클리어
+      if (statusTimeout) {
+        clearTimeout(statusTimeout);
+        statusTimeout = null;
+      }
+      
+      if (connected) {
+        // 연결됨: 즉시 정상 표시
+        statusDotAdmin.classList.remove('ok', 'off');
+        statusDotAdmin.classList.add('ok');
+        statusTextAdmin.textContent = '서버 연결 정상';
+      } else {
+        // 연결 끊김: 1초 후에도 끊겨있으면 비정상 표시 (일시적 끊김 무시)
+        statusTimeout = setTimeout(() => {
+          statusDotAdmin.classList.remove('ok', 'off');
+          statusDotAdmin.classList.add('off');
+          statusTextAdmin.textContent = '서버 연결 안 됨';
+        }, 1000);
+      }
     }
 
     if (db) {
@@ -629,6 +654,12 @@
       return items;
     }
 
+    // 고유번호 정규화: 모든 공백 제거, 대문자 변환 (공백 포함 고유번호 처리)
+    function normalizeUniqueCode(code) {
+      if (!code) return '';
+      return String(code).trim().replace(/\s+/g, '').toUpperCase();
+    }
+
     function applyMetaAndRender() {
       if (Object.keys(metaSnaps).length !== PREFIXES.length) return;
       allItems = buildItemsFromMetaSnaps();
@@ -636,7 +667,7 @@
       // 고유번호 중복 검사 (자동) - 다른 고객이 사용한 경우만
       duplicateSubmissionIds.clear();
       duplicateUniqueCodes.clear();
-      const uniqueCodeMap = new Map(); // uniqueCode -> [{ submissionId, dateKey, prefix, contact, key }]
+      const uniqueCodeMap = new Map(); // 정규화된 uniqueCode -> [{ submissionId, dateKey, prefix, contact, key, originalCode }]
       
       function normalizeContactForDup(c) {
         return (c || '').replace(/\D/g, '').trim();
@@ -646,40 +677,59 @@
         const u = getUniqueCodesArray(item);
         const contact = normalizeContactForDup(item.contact);
         u.forEach((uc) => {
-          const code = (uc.uniqueCode || '').trim();
-          if (!code) return;
+          const originalCode = (uc.uniqueCode || '').trim();
+          if (!originalCode) return;
+          
+          // 정규화된 고유번호로 비교 (공백 제거, 대문자 변환)
+          const normalizedCode = normalizeUniqueCode(originalCode);
+          if (!normalizedCode) return;
           
           const key = item.id + '|' + (item._dateKey || '') + '|' + (item._prefix || '');
-          if (!uniqueCodeMap.has(code)) {
-            uniqueCodeMap.set(code, []);
+          if (!uniqueCodeMap.has(normalizedCode)) {
+            uniqueCodeMap.set(normalizedCode, []);
           }
-          uniqueCodeMap.get(code).push({
+          uniqueCodeMap.get(normalizedCode).push({
             submissionId: item.id,
             dateKey: item._dateKey || '',
             prefix: item._prefix || '',
             contact: contact,
-            key: key
+            key: key,
+            originalCode: originalCode // 원본 고유번호도 저장
           });
         });
       });
       
-      // 중복된 고유번호를 가진 접수 ID 수집 (다른 고객이 사용한 경우만)
-      uniqueCodeMap.forEach((submissions, code) => {
-        if (submissions.length >= 2) {
-          // 연락처 기준으로 다른 고객인지 확인
-          const contacts = new Set(submissions.map(s => s.contact).filter(c => c));
-          const isDifferentCustomer = contacts.size > 1;
-          
-          if (isDifferentCustomer) {
-            // 다른 고객이 사용한 고유번호 기록
-            duplicateUniqueCodes.add(code);
-            // 다른 고객이 사용한 경우만 중복 목록에 추가
-            submissions.forEach((sub) => {
-              duplicateSubmissionIds.add(sub.key);
-            });
-          }
+      // 디버깅: 정규화 확인 (공백 포함 고유번호 샘플)
+      const sampleCodes = [];
+      uniqueCodeMap.forEach((submissions, normalizedCode) => {
+        if (submissions.length > 0 && submissions[0].originalCode && submissions[0].originalCode.includes(' ')) {
+          sampleCodes.push({
+            원본: submissions[0].originalCode,
+            정규화: normalizedCode,
+            개수: submissions.length
+          });
         }
       });
+      if (sampleCodes.length > 0) {
+        console.log('공백 포함 고유번호 샘플:', sampleCodes.slice(0, 5));
+      }
+      
+      // 중복된 고유번호를 가진 접수 ID 수집 (2개 이상 사용된 모든 고유번호)
+      uniqueCodeMap.forEach((submissions, normalizedCode) => {
+        if (submissions.length >= 2) {
+          // 정규화된 고유번호를 중복 목록에 추가 (같은 고객이 여러 번 사용한 경우도 포함)
+          duplicateUniqueCodes.add(normalizedCode);
+          // 모든 중복 접수를 중복 목록에 추가
+          submissions.forEach((sub) => {
+            duplicateSubmissionIds.add(sub.key);
+          });
+        }
+      });
+      
+      // 디버깅: 중복 고유번호 확인
+      if (duplicateUniqueCodes.size > 0) {
+        console.log('중복 고유번호 발견:', Array.from(duplicateUniqueCodes));
+      }
       
       paginationPage = 1;
       renderTable();
@@ -843,7 +893,19 @@
           rowsHtml += '<td><span class="cell-text">' + escapeHtml(u12[i].productName || '-') + '</span></td>';
           rowsHtml += '<td><span class="cell-text">' + escapeHtml(u12[i].batchNumber || '-') + '</span></td>';
           const uniqueCode = (u12[i].uniqueCode || '').trim();
-          const isUniqueCodeDuplicate = uniqueCode && duplicateUniqueCodes.has(uniqueCode);
+          // 정규화된 고유번호로 중복 체크 (공백 포함 고유번호 처리)
+          const normalizedUniqueCode = normalizeUniqueCode(uniqueCode);
+          const isUniqueCodeDuplicate = normalizedUniqueCode && duplicateUniqueCodes.has(normalizedUniqueCode);
+          // 디버깅: 공백 포함 고유번호가 있고 중복이 아닌 경우만 로그 (처음 3개만)
+          if (uniqueCode && uniqueCode.includes(' ') && !isUniqueCodeDuplicate && pageItems.indexOf(d) < 3) {
+            console.log('강조 안 된 공백 포함 고유번호:', {
+              원본: uniqueCode,
+              정규화: normalizedUniqueCode,
+              중복목록에있음: duplicateUniqueCodes.has(normalizedUniqueCode),
+              중복목록크기: duplicateUniqueCodes.size,
+              샘플중복목록: Array.from(duplicateUniqueCodes).slice(0, 5)
+            });
+          }
           const uniqueCodeCellStyle = isUniqueCodeDuplicate ? ' style="background-color: #ffe0e0;"' : '';
           rowsHtml += '<td' + uniqueCodeCellStyle + '><span class="cell-text">' + escapeHtml(uniqueCode || '-') + '</span></td>';
         }
