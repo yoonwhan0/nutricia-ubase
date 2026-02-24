@@ -660,14 +660,21 @@
       return String(code).trim().replace(/\s+/g, '').toUpperCase();
     }
 
+    // 제조번호 + 고유번호 조합 정규화 함수
+    function normalizeBatchUniqueCombination(batchNumber, uniqueCode) {
+      const batch = String(batchNumber || '').trim().replace(/\s+/g, '').toUpperCase();
+      const code = String(uniqueCode || '').trim().replace(/\s+/g, '').toUpperCase();
+      return (batch + code).trim();
+    }
+
     function applyMetaAndRender() {
       if (Object.keys(metaSnaps).length !== PREFIXES.length) return;
       allItems = buildItemsFromMetaSnaps();
       
-      // 고유번호 중복 검사 (자동) - 다른 고객이 사용한 경우만
+      // 제조번호 + 고유번호 조합 중복 검사 (자동) - 다른 고객이 사용한 경우만
       duplicateSubmissionIds.clear();
       duplicateUniqueCodes.clear();
-      const uniqueCodeMap = new Map(); // 정규화된 uniqueCode -> [{ submissionId, dateKey, prefix, contact, key, originalCode }]
+      const combinationMap = new Map(); // 정규화된 제조번호+고유번호 조합 -> [{ submissionId, dateKey, prefix, contact, key, originalCode, originalBatch }]
       
       function normalizeContactForDup(c) {
         return (c || '').replace(/\D/g, '').trim();
@@ -678,57 +685,70 @@
         const contact = normalizeContactForDup(item.contact);
         u.forEach((uc) => {
           const originalCode = (uc.uniqueCode || '').trim();
+          const originalBatch = (uc.batchNumber || '').trim();
           if (!originalCode) return;
           
-          // 정규화된 고유번호로 비교 (공백 제거, 대문자 변환)
-          const normalizedCode = normalizeUniqueCode(originalCode);
-          if (!normalizedCode) return;
+          // 제조번호 + 고유번호 조합으로 정규화
+          const normalizedCombination = normalizeBatchUniqueCombination(originalBatch, originalCode);
+          if (!normalizedCombination) return;
           
           const key = item.id + '|' + (item._dateKey || '') + '|' + (item._prefix || '');
-          if (!uniqueCodeMap.has(normalizedCode)) {
-            uniqueCodeMap.set(normalizedCode, []);
+          if (!combinationMap.has(normalizedCombination)) {
+            combinationMap.set(normalizedCombination, []);
           }
-          uniqueCodeMap.get(normalizedCode).push({
+          combinationMap.get(normalizedCombination).push({
             submissionId: item.id,
             dateKey: item._dateKey || '',
             prefix: item._prefix || '',
             contact: contact,
             key: key,
-            originalCode: originalCode // 원본 고유번호도 저장
+            originalCode: originalCode, // 원본 고유번호도 저장
+            originalBatch: originalBatch // 원본 제조번호도 저장
           });
         });
       });
       
-      // 디버깅: 정규화 확인 (공백 포함 고유번호 샘플)
-      const sampleCodes = [];
-      uniqueCodeMap.forEach((submissions, normalizedCode) => {
+      // 디버깅: 정규화 확인 (공백 포함 제조번호+고유번호 조합 샘플)
+      const sampleCombinations = [];
+      combinationMap.forEach((submissions, normalizedCombination) => {
         if (submissions.length > 0 && submissions[0].originalCode && submissions[0].originalCode.includes(' ')) {
-          sampleCodes.push({
-            원본: submissions[0].originalCode,
-            정규화: normalizedCode,
+          sampleCombinations.push({
+            원본제조번호: submissions[0].originalBatch,
+            원본고유번호: submissions[0].originalCode,
+            정규화조합: normalizedCombination,
             개수: submissions.length
           });
         }
       });
-      if (sampleCodes.length > 0) {
-        console.log('공백 포함 고유번호 샘플:', sampleCodes.slice(0, 5));
+      if (sampleCombinations.length > 0) {
+        console.log('공백 포함 제조번호+고유번호 조합 샘플:', sampleCombinations.slice(0, 5));
       }
       
-      // 중복된 고유번호를 가진 접수 ID 수집 (2개 이상 사용된 모든 고유번호)
-      uniqueCodeMap.forEach((submissions, normalizedCode) => {
+      // 중복된 제조번호+고유번호 조합을 가진 접수 ID 수집 (2개 이상 사용된 모든 조합)
+      // 중요: 같은 접수 내에서 여러 번 사용된 경우는 제외 (다른 접수에서 사용된 경우만 중복으로 간주)
+      combinationMap.forEach((submissions, normalizedCombination) => {
         if (submissions.length >= 2) {
-          // 정규화된 고유번호를 중복 목록에 추가 (같은 고객이 여러 번 사용한 경우도 포함)
-          duplicateUniqueCodes.add(normalizedCode);
-          // 모든 중복 접수를 중복 목록에 추가
+          // 같은 접수 내에서 여러 번 사용된 경우를 제외하기 위해 접수별로 그룹화
+          const submissionKeys = new Set();
           submissions.forEach((sub) => {
-            duplicateSubmissionIds.add(sub.key);
+            submissionKeys.add(sub.key);
           });
+          
+          // 실제로 2개 이상의 다른 접수에서 사용된 경우만 중복으로 간주
+          if (submissionKeys.size >= 2) {
+            // 정규화된 조합을 중복 목록에 추가 (2개 이상의 다른 접수에서 사용된 경우만)
+            duplicateUniqueCodes.add(normalizedCombination);
+            // 모든 중복 접수를 중복 목록에 추가
+            submissions.forEach((sub) => {
+              duplicateSubmissionIds.add(sub.key);
+            });
+          }
         }
       });
       
-      // 디버깅: 중복 고유번호 확인
+      // 디버깅: 중복 제조번호+고유번호 조합 확인
       if (duplicateUniqueCodes.size > 0) {
-        console.log('중복 고유번호 발견:', Array.from(duplicateUniqueCodes));
+        console.log('중복 제조번호+고유번호 조합 발견:', Array.from(duplicateUniqueCodes));
       }
       
       paginationPage = 1;
@@ -893,19 +913,17 @@
           rowsHtml += '<td><span class="cell-text">' + escapeHtml(u12[i].productName || '-') + '</span></td>';
           rowsHtml += '<td><span class="cell-text">' + escapeHtml(u12[i].batchNumber || '-') + '</span></td>';
           const uniqueCode = (u12[i].uniqueCode || '').trim();
-          // 정규화된 고유번호로 중복 체크 (공백 포함 고유번호 처리)
-          const normalizedUniqueCode = normalizeUniqueCode(uniqueCode);
-          const isUniqueCodeDuplicate = normalizedUniqueCode && duplicateUniqueCodes.has(normalizedUniqueCode);
-          // 디버깅: 공백 포함 고유번호가 있고 중복이 아닌 경우만 로그 (처음 3개만)
-          if (uniqueCode && uniqueCode.includes(' ') && !isUniqueCodeDuplicate && pageItems.indexOf(d) < 3) {
-            console.log('강조 안 된 공백 포함 고유번호:', {
-              원본: uniqueCode,
-              정규화: normalizedUniqueCode,
-              중복목록에있음: duplicateUniqueCodes.has(normalizedUniqueCode),
-              중복목록크기: duplicateUniqueCodes.size,
-              샘플중복목록: Array.from(duplicateUniqueCodes).slice(0, 5)
-            });
+          const batchNumber = (u12[i].batchNumber || '').trim();
+          
+          // 실제로 중복된 제조번호+고유번호 조합만 음영처리
+          // 제조번호+고유번호 조합으로 중복 체크
+          let isUniqueCodeDuplicate = false;
+          if (uniqueCode) {
+            const normalizedCombination = normalizeBatchUniqueCombination(batchNumber, uniqueCode);
+            // duplicateUniqueCodes에는 실제로 2개 이상의 접수에서 사용된 조합만 포함됨
+            isUniqueCodeDuplicate = normalizedCombination && duplicateUniqueCodes.has(normalizedCombination);
           }
+          
           const uniqueCodeCellStyle = isUniqueCodeDuplicate ? ' style="background-color: #ffe0e0;"' : '';
           rowsHtml += '<td' + uniqueCodeCellStyle + '><span class="cell-text">' + escapeHtml(uniqueCode || '-') + '</span></td>';
         }
