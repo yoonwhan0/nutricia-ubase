@@ -1219,7 +1219,14 @@
           const dateKey = row.getAttribute('data-date-key') || '';
           const prefix = row.getAttribute('data-prefix') || '';
           const d = allItems.find((it) => String(it.id) === String(id) && (it._dateKey || '') === dateKey && it._prefix === prefix);
-          if (d) openDetailModal(d);
+          if (d) {
+            const isLegacy = !dateKey;
+            const url = 'photo_view.html?id=' + encodeURIComponent(id) + 
+                       (dateKey ? '&dateKey=' + encodeURIComponent(dateKey) : '') +
+                       (isLegacy ? '&legacy=1' : '') +
+                       '&prefix=' + encodeURIComponent(prefix);
+            window.open(url, '_blank', 'width=1400,height=900,scrollbars=yes');
+          }
         });
       });
     }

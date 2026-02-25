@@ -6,20 +6,46 @@
   <title>사진 보기 - 압타밀 통합 조회</title>
   <link rel="stylesheet" href="css/style.css">
   <style>
-    body { padding: 20px; max-width: 900px; margin: 0 auto; background: #f5f5f5; }
+    body { padding: 20px; max-width: 1600px; margin: 0 auto; background: #f5f5f5; }
     .detail-page-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
     .detail-page-header h1 { margin: 0; font-size: 1.25rem; }
     .back-link { padding: 8px 16px; background: #1a1a1a; color: #fff; text-decoration: none; border-radius: 4px; font-size: 14px; }
     .back-link:hover { background: #333; color: #fff; }
-    #detailRoot { background: #fff; padding: 24px; border-radius: 8px; border: 1px solid #e0e0e0; }
+    #detailRoot { background: #fff; padding: 24px; border-radius: 8px; border: 1px solid #e0e0e0; display: flex; gap: 24px; }
+    .photo-column { flex: 1; min-width: 0; }
+    .info-column { flex: 0 0 400px; }
     .detail-section { margin-bottom: 24px; }
-    .detail-section h2 { font-size: 16px; margin: 0 0 12px 0; }
-    .detail-photos { display: flex; flex-wrap: wrap; gap: 16px; }
+    .detail-section h2 { font-size: 16px; margin: 0 0 12px 0; border-bottom: 1px solid #e0e0e0; padding-bottom: 8px; }
+    .info-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 16px; }
+    .info-item { display: flex; flex-direction: column; }
+    .info-item label { font-weight: 600; color: #666; font-size: 12px; margin-bottom: 4px; }
+    .info-item span { color: #333; font-size: 14px; }
+    .product-list { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    .product-item { border: 1px solid #e0e0e0; padding: 12px; border-radius: 4px; background: #fafafa; }
+    .product-item .product-name { font-weight: 600; color: #333; margin-bottom: 8px; }
+    .product-item .product-detail { font-size: 13px; color: #666; margin: 4px 0; }
+    .detail-photos { display: flex; flex-direction: column; gap: 16px; }
     .photo-box { border: 1px solid #e0e0e0; padding: 12px; border-radius: 4px; }
-    .photo-box .caption { font-size: 12px; color: #666; margin-bottom: 8px; }
-    .detail-photo-img { max-width: 200px; max-height: 200px; cursor: pointer; display: block; }
+    .photo-box .caption { font-size: 12px; color: #666; margin-bottom: 8px; font-weight: 600; }
+    .photo-box-images { display: flex; flex-wrap: wrap; gap: 8px; }
+    .detail-photo-img { max-width: 300px; max-height: 300px; cursor: pointer; display: block; border-radius: 4px; object-fit: contain; }
     .no-image { color: #999; font-size: 13px; }
     .msg.error { color: #c00; }
+    .photo-zoom-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.9); z-index: 10000; display: none; align-items: center; justify-content: center; cursor: default; }
+    .photo-zoom-overlay.show { display: flex; }
+    .photo-zoom-img { max-width: 90vw; max-height: 90vh; object-fit: contain; border-radius: 4px; cursor: default; }
+    .photo-zoom-close { position: absolute; top: 20px; right: 20px; color: #fff; font-size: 32px; font-weight: bold; cursor: pointer; background: rgba(0, 0, 0, 0.5); width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; line-height: 1; z-index: 10001; }
+    .photo-zoom-close:hover { background: rgba(0, 0, 0, 0.8); }
+    .photo-zoom-nav { position: absolute; top: 50%; transform: translateY(-50%); color: #fff; font-size: 48px; font-weight: bold; cursor: pointer; background: rgba(0, 0, 0, 0.5); width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; line-height: 1; z-index: 10001; transition: background 0.2s; border: none; }
+    .photo-zoom-nav:hover { background: rgba(0, 0, 0, 0.8); }
+    .photo-zoom-nav.prev { left: 20px; }
+    .photo-zoom-nav.next { right: 20px; }
+    .photo-zoom-nav.disabled { opacity: 0.3; cursor: not-allowed; }
+    .photo-zoom-counter { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 14px; background: rgba(0, 0, 0, 0.5); padding: 8px 16px; border-radius: 20px; z-index: 10001; }
+    @media (max-width: 1024px) {
+      #detailRoot { flex-direction: column; }
+      .info-column { flex: 1; }
+    }
   </style>
 </head>
 <body>
@@ -28,6 +54,13 @@
     <a href="#" id="backToListBtn" class="back-link">← 목록으로</a>
   </div>
   <div id="detailRoot">불러오는 중…</div>
+  <div id="photoZoomOverlay" class="photo-zoom-overlay">
+    <span class="photo-zoom-close">&times;</span>
+    <button class="photo-zoom-nav prev" id="photoZoomPrev">‹</button>
+    <button class="photo-zoom-nav next" id="photoZoomNext">›</button>
+    <img id="photoZoomImg" class="photo-zoom-img" src="" alt="확대 사진">
+    <div class="photo-zoom-counter" id="photoZoomCounter"></div>
+  </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
@@ -71,6 +104,27 @@
       return single ? [single] : [];
     }
 
+    function getUniqueCodesArray(d) {
+      let arr = d.uniqueCodesData;
+      if (Array.isArray(arr)) return arr;
+      const codes = Array.isArray(d.uniqueCodes) ? d.uniqueCodes : (d.uniqueCode ? [d.uniqueCode] : []);
+      return codes.map(code => ({ productName: '', batchNumber: '', uniqueCode: code || '' }));
+    }
+
+    function formatDate(timestamp) {
+      if (!timestamp) return '-';
+      const d = new Date(timestamp);
+      if (isNaN(d.getTime())) return '-';
+      return d.toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function escapeHtml(str) {
+      if (str == null) return '';
+      const div = document.createElement('div');
+      div.textContent = String(str);
+      return div.innerHTML;
+    }
+
     function dataURLtoBlob(dataURL) {
       const parts = dataURL.split(',');
       const meta = parts[0];
@@ -101,33 +155,147 @@
         const p1List = getPhotoListFromData(d, 'photo1', 'photo1List');
         const p2List = getPhotoListFromData(d, 'photo2', 'photo2List');
         const p3List = getPhotoListFromData(d, 'photo3', 'photo3List');
+        const uniqueCodes = getUniqueCodesArray(d);
 
-        let html = '<div class="detail-section"><h2>1. 구매 시 영수증</h2><div class="detail-photos"><div class="photo-box"><div class="caption">업로드된 사진</div>';
-        if (p1List.length) p1List.forEach((url) => { html += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="영수증" class="detail-photo-img" data-url="' + url.replace(/"/g, '&quot;') + '" style="cursor:pointer">'; });
-        else html += '<div class="no-image">없음</div>';
-        html += '</div></div></div>';
-        html += '<div class="detail-section"><h2>2. 제품 앞면</h2><div class="detail-photos"><div class="photo-box"><div class="caption">업로드된 사진</div>';
-        if (p2List.length) p2List.forEach((url) => { html += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="제품 앞면" class="detail-photo-img" data-url="' + url.replace(/"/g, '&quot;') + '" style="cursor:pointer">'; });
-        else html += '<div class="no-image">없음</div>';
-        html += '</div></div></div>';
-        html += '<div class="detail-section"><h2>3. 제품 뒷면/바닥면</h2><div class="detail-photos"><div class="photo-box"><div class="caption">업로드된 사진</div>';
-        if (p3List.length) p3List.forEach((url) => { html += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="제품 뒷면" class="detail-photo-img" data-url="' + url.replace(/"/g, '&quot;') + '" style="cursor:pointer">'; });
-        else html += '<div class="no-image">없음</div>';
-        html += '</div></div></div>';
-        root.innerHTML = html;
+        document.getElementById('detailPageTitle').textContent = '고객 상세 · 사진 보기 — ' + (d.name || d.contact || d.id || '');
 
-        root.querySelectorAll('.detail-photo-img').forEach(img => {
+        let photoHtml = '<div class="photo-column">';
+        photoHtml += '<div class="detail-section"><h2>1. 구매 시 영수증</h2><div class="detail-photos"><div class="photo-box"><div class="caption">업로드된 사진</div><div class="photo-box-images">';
+        if (p1List.length) p1List.forEach((url) => { photoHtml += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="영수증" class="detail-photo-img" data-url="' + url.replace(/"/g, '&quot;') + '">'; });
+        else photoHtml += '<div class="no-image">없음</div>';
+        photoHtml += '</div></div></div></div>';
+        photoHtml += '<div class="detail-section"><h2>2. 제품 앞면</h2><div class="detail-photos"><div class="photo-box"><div class="caption">업로드된 사진</div><div class="photo-box-images">';
+        if (p2List.length) p2List.forEach((url) => { photoHtml += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="제품 앞면" class="detail-photo-img" data-url="' + url.replace(/"/g, '&quot;') + '">'; });
+        else photoHtml += '<div class="no-image">없음</div>';
+        photoHtml += '</div></div></div></div>';
+        photoHtml += '<div class="detail-section"><h2>3. 제품 뒷면/바닥면</h2><div class="detail-photos"><div class="photo-box"><div class="caption">업로드된 사진</div><div class="photo-box-images">';
+        if (p3List.length) p3List.forEach((url) => { photoHtml += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="제품 뒷면" class="detail-photo-img" data-url="' + url.replace(/"/g, '&quot;') + '">'; });
+        else photoHtml += '<div class="no-image">없음</div>';
+        photoHtml += '</div></div></div></div>';
+        photoHtml += '</div>';
+
+        let infoHtml = '<div class="info-column">';
+        infoHtml += '<div class="detail-section"><h2>고객 정보</h2><div class="info-grid">';
+        infoHtml += '<div class="info-item"><label>이름</label><span>' + escapeHtml(d.name || '-') + '</span></div>';
+        infoHtml += '<div class="info-item"><label>연락처</label><span>' + escapeHtml(d.contact || '-') + '</span></div>';
+        infoHtml += '<div class="info-item"><label>주소</label><span>' + escapeHtml(d.address || '-') + '</span></div>';
+        infoHtml += '<div class="info-item"><label>상세주소</label><span>' + escapeHtml(d.addressDetail || '-') + '</span></div>';
+        infoHtml += '<div class="info-item"><label>개인통관부호</label><span>' + escapeHtml(d.customsCode || '-') + '</span></div>';
+        infoHtml += '<div class="info-item"><label>접수ID</label><span>' + escapeHtml(d.id || '-') + '</span></div>';
+        infoHtml += '<div class="info-item"><label>접수일시</label><span>' + escapeHtml(formatDate(d.createdAt)) + '</span></div>';
+        infoHtml += '</div></div>';
+
+        if (uniqueCodes.length > 0) {
+          infoHtml += '<div class="detail-section"><h2>제품 정보</h2><div class="product-list">';
+          uniqueCodes.forEach((uc, idx) => {
+            if (!uc.productName && !uc.batchNumber && !uc.uniqueCode) return;
+            infoHtml += '<div class="product-item">';
+            infoHtml += '<div class="product-name">제품 ' + (idx + 1) + (uc.productName ? ': ' + escapeHtml(uc.productName) : '') + '</div>';
+            if (uc.batchNumber) infoHtml += '<div class="product-detail"><strong>제조번호:</strong> ' + escapeHtml(uc.batchNumber) + '</div>';
+            if (uc.uniqueCode) infoHtml += '<div class="product-detail"><strong>고유번호:</strong> ' + escapeHtml(uc.uniqueCode) + '</div>';
+            infoHtml += '</div>';
+          });
+          infoHtml += '</div></div>';
+        }
+        infoHtml += '</div>';
+
+        root.innerHTML = photoHtml + infoHtml;
+
+        const overlay = document.getElementById('photoZoomOverlay');
+        const zoomImg = document.getElementById('photoZoomImg');
+        const closeBtn = overlay.querySelector('.photo-zoom-close');
+        const prevBtn = document.getElementById('photoZoomPrev');
+        const nextBtn = document.getElementById('photoZoomNext');
+        const counter = document.getElementById('photoZoomCounter');
+        
+        let allPhotos = [];
+        let currentPhotoIndex = -1;
+
+        function collectAllPhotos() {
+          allPhotos = [];
+          const p1List = getPhotoListFromData(d, 'photo1', 'photo1List');
+          const p2List = getPhotoListFromData(d, 'photo2', 'photo2List');
+          const p3List = getPhotoListFromData(d, 'photo3', 'photo3List');
+          p1List.forEach(url => allPhotos.push({ url, label: '구매 시 영수증' }));
+          p2List.forEach(url => allPhotos.push({ url, label: '제품 앞면' }));
+          p3List.forEach(url => allPhotos.push({ url, label: '제품 뒷면/바닥면' }));
+        }
+
+        function showZoom(index) {
+          if (index < 0 || index >= allPhotos.length) return;
+          currentPhotoIndex = index;
+          const photo = allPhotos[index];
+          zoomImg.src = photo.url;
+          counter.textContent = (index + 1) + ' / ' + allPhotos.length;
+          updateNavButtons();
+          overlay.classList.add('show');
+        }
+
+        function hideZoom() {
+          overlay.classList.remove('show');
+          zoomImg.src = '';
+          currentPhotoIndex = -1;
+        }
+
+        function updateNavButtons() {
+          prevBtn.classList.toggle('disabled', currentPhotoIndex <= 0);
+          nextBtn.classList.toggle('disabled', currentPhotoIndex >= allPhotos.length - 1);
+        }
+
+        function showPrev() {
+          if (currentPhotoIndex > 0) {
+            showZoom(currentPhotoIndex - 1);
+          }
+        }
+
+        function showNext() {
+          if (currentPhotoIndex < allPhotos.length - 1) {
+            showZoom(currentPhotoIndex + 1);
+          }
+        }
+
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay || e.target === closeBtn) hideZoom();
+        });
+
+        prevBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!prevBtn.classList.contains('disabled')) showPrev();
+        });
+
+        nextBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!nextBtn.classList.contains('disabled')) showNext();
+        });
+
+        document.addEventListener('keydown', (e) => {
+          if (!overlay.classList.contains('show')) return;
+          if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            showPrev();
+          } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            showNext();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            hideZoom();
+          }
+        });
+
+        collectAllPhotos();
+
+        root.querySelectorAll('.detail-photo-img').forEach((img, idx) => {
           img.addEventListener('click', () => {
             const url = img.getAttribute('data-url');
             if (!url) return;
             try {
-              if (url.startsWith('data:')) {
-                const blob = dataURLtoBlob(url);
-                const blobUrl = URL.createObjectURL(blob);
-                window.open(blobUrl, '_blank');
-                setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-              } else { window.open(url, '_blank'); }
-            } catch (err) { alert('사진을 열 수 없습니다.'); }
+              const photoIndex = allPhotos.findIndex(p => p.url === url);
+              if (photoIndex >= 0) {
+                showZoom(photoIndex);
+              }
+            } catch (err) { 
+              alert('사진을 열 수 없습니다.'); 
+            }
           });
         });
       }).catch(err => {
