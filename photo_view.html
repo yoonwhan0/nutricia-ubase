@@ -33,7 +33,8 @@
     .msg.error { color: #c00; }
     .photo-zoom-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.9); z-index: 10000; display: none; align-items: center; justify-content: center; cursor: default; }
     .photo-zoom-overlay.show { display: flex; }
-    .photo-zoom-img { max-width: 90vw; max-height: 90vh; object-fit: contain; border-radius: 4px; cursor: default; }
+    .photo-zoom-img { max-width: 90vw; max-height: 90vh; object-fit: contain; border-radius: 4px; cursor: zoom-in; transition: transform 0.1s ease-out; transform-origin: center center; }
+    .photo-zoom-img.zoomed { cursor: move; }
     .photo-zoom-close { position: absolute; top: 20px; right: 20px; color: #fff; font-size: 32px; font-weight: bold; cursor: pointer; background: rgba(0, 0, 0, 0.5); width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; line-height: 1; z-index: 10001; }
     .photo-zoom-close:hover { background: rgba(0, 0, 0, 0.8); }
     .photo-zoom-nav { position: absolute; top: 50%; transform: translateY(-50%); color: #fff; font-size: 48px; font-weight: bold; cursor: pointer; background: rgba(0, 0, 0, 0.5); width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; line-height: 1; z-index: 10001; transition: background 0.2s; border: none; }
@@ -210,6 +211,10 @@
         
         let allPhotos = [];
         let currentPhotoIndex = -1;
+        let zoomLevel = 1.0;
+        const minZoom = 1.0;
+        const maxZoom = 5.0;
+        const zoomStep = 0.1;
 
         function collectAllPhotos() {
           allPhotos = [];
@@ -221,12 +226,37 @@
           p3List.forEach(url => allPhotos.push({ url, label: '제품 뒷면/바닥면' }));
         }
 
+        function applyZoom() {
+          zoomImg.style.transform = `scale(${zoomLevel})`;
+          if (zoomLevel > 1.0) {
+            zoomImg.classList.add('zoomed');
+          } else {
+            zoomImg.classList.remove('zoomed');
+          }
+        }
+
+        function zoomIn() {
+          zoomLevel = Math.min(zoomLevel + zoomStep, maxZoom);
+          applyZoom();
+        }
+
+        function zoomOut() {
+          zoomLevel = Math.max(zoomLevel - zoomStep, minZoom);
+          applyZoom();
+        }
+
+        function resetZoom() {
+          zoomLevel = 1.0;
+          applyZoom();
+        }
+
         function showZoom(index) {
           if (index < 0 || index >= allPhotos.length) return;
           currentPhotoIndex = index;
           const photo = allPhotos[index];
           zoomImg.src = photo.url;
           counter.textContent = (index + 1) + ' / ' + allPhotos.length;
+          resetZoom();
           updateNavButtons();
           overlay.classList.add('show');
         }
@@ -234,6 +264,7 @@
         function hideZoom() {
           overlay.classList.remove('show');
           zoomImg.src = '';
+          resetZoom();
           currentPhotoIndex = -1;
         }
 
@@ -279,8 +310,27 @@
           } else if (e.key === 'Escape') {
             e.preventDefault();
             hideZoom();
+          } else if (e.key === '+' || e.key === '=') {
+            e.preventDefault();
+            zoomIn();
+          } else if (e.key === '-' || e.key === '_') {
+            e.preventDefault();
+            zoomOut();
+          } else if (e.key === '0') {
+            e.preventDefault();
+            resetZoom();
           }
         });
+
+        overlay.addEventListener('wheel', (e) => {
+          if (!overlay.classList.contains('show')) return;
+          e.preventDefault();
+          if (e.deltaY < 0) {
+            zoomIn();
+          } else {
+            zoomOut();
+          }
+        }, { passive: false });
 
         collectAllPhotos();
 
