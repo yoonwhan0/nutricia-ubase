@@ -43,6 +43,8 @@
     .photo-zoom-nav.next { right: 20px; }
     .photo-zoom-nav.disabled { opacity: 0.3; cursor: not-allowed; }
     .photo-zoom-counter { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 14px; background: rgba(0, 0, 0, 0.5); padding: 8px 16px; border-radius: 20px; z-index: 10001; }
+    .photo-zoom-hint { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 12px; background: rgba(0, 0, 0, 0.7); padding: 8px 16px; border-radius: 20px; z-index: 10001; text-align: center; line-height: 1.5; }
+    .photo-zoom-hint.hidden { display: none; }
     @media (max-width: 1024px) {
       #detailRoot { flex-direction: column; }
       .info-column { flex: 1; }
@@ -57,6 +59,7 @@
   <div id="detailRoot">불러오는 중…</div>
   <div id="photoZoomOverlay" class="photo-zoom-overlay">
     <span class="photo-zoom-close">&times;</span>
+    <div class="photo-zoom-hint" id="photoZoomHint">Ctrl + 휠: 확대/축소 | 휠: 스크롤 이동 | ←/→: 사진 전환</div>
     <button class="photo-zoom-nav prev" id="photoZoomPrev">‹</button>
     <button class="photo-zoom-nav next" id="photoZoomNext">›</button>
     <img id="photoZoomImg" class="photo-zoom-img" src="" alt="확대 사진">
@@ -208,6 +211,7 @@
         const prevBtn = document.getElementById('photoZoomPrev');
         const nextBtn = document.getElementById('photoZoomNext');
         const counter = document.getElementById('photoZoomCounter');
+        const hint = document.getElementById('photoZoomHint');
         
         let allPhotos = [];
         let currentPhotoIndex = -1;
@@ -296,6 +300,10 @@
           counter.textContent = (index + 1) + ' / ' + allPhotos.length;
           updateNavButtons();
           overlay.classList.add('show');
+          hint.classList.remove('hidden');
+          setTimeout(() => {
+            hint.classList.add('hidden');
+          }, 5000);
         }
 
         function hideZoom() {
