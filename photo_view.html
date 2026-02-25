@@ -212,6 +212,13 @@
         let allPhotos = [];
         let currentPhotoIndex = -1;
         let zoomLevel = 1.0;
+        let translateX = 0;
+        let translateY = 0;
+        let isDragging = false;
+        let dragStartX = 0;
+        let dragStartY = 0;
+        let dragStartTranslateX = 0;
+        let dragStartTranslateY = 0;
         const minZoom = 1.0;
         const maxZoom = 5.0;
         const zoomStep = 0.1;
@@ -226,8 +233,26 @@
           p3List.forEach(url => allPhotos.push({ url, label: '제품 뒷면/바닥면' }));
         }
 
-        function applyZoom() {
-          zoomImg.style.transform = `scale(${zoomLevel})`;
+        function constrainPosition() {
+          if (zoomLevel <= 1.0) {
+            translateX = 0;
+            translateY = 0;
+            return;
+          }
+          const imgRect = zoomImg.getBoundingClientRect();
+          const overlayRect = overlay.getBoundingClientRect();
+          const imgDisplayWidth = imgRect.width / zoomLevel;
+          const imgDisplayHeight = imgRect.height / zoomLevel;
+          const scaledWidth = imgDisplayWidth * zoomLevel;
+          const scaledHeight = imgDisplayHeight * zoomLevel;
+          const maxX = Math.max(0, (scaledWidth - overlayRect.width) / 2);
+          const maxY = Math.max(0, (scaledHeight - overlayRect.height) / 2);
+          translateX = Math.max(-maxX, Math.min(maxX, translateX));
+          translateY = Math.max(-maxY, Math.min(maxY, translateY));
+        }
+
+        function applyTransform() {
+          zoomImg.style.transform = `translate(${translateX}px, ${translateY}px) scale(${zoomLevel})`;
           if (zoomLevel > 1.0) {
             zoomImg.classList.add('zoomed');
           } else {
@@ -236,27 +261,39 @@
         }
 
         function zoomIn() {
+          const oldZoom = zoomLevel;
           zoomLevel = Math.min(zoomLevel + zoomStep, maxZoom);
-          applyZoom();
+          const zoomRatio = zoomLevel / oldZoom;
+          translateX *= zoomRatio;
+          translateY *= zoomRatio;
+          constrainPosition();
+          applyTransform();
         }
 
         function zoomOut() {
+          const oldZoom = zoomLevel;
           zoomLevel = Math.max(zoomLevel - zoomStep, minZoom);
-          applyZoom();
+          const zoomRatio = zoomLevel / oldZoom;
+          translateX *= zoomRatio;
+          translateY *= zoomRatio;
+          constrainPosition();
+          applyTransform();
         }
 
         function resetZoom() {
           zoomLevel = 1.0;
-          applyZoom();
+          translateX = 0;
+          translateY = 0;
+          applyTransform();
         }
 
         function showZoom(index) {
           if (index < 0 || index >= allPhotos.length) return;
           currentPhotoIndex = index;
           const photo = allPhotos[index];
+          resetZoom();
           zoomImg.src = photo.url;
           counter.textContent = (index + 1) + ' / ' + allPhotos.length;
-          resetZoom();
           updateNavButtons();
           overlay.classList.add('show');
         }
@@ -325,12 +362,54 @@
         overlay.addEventListener('wheel', (e) => {
           if (!overlay.classList.contains('show')) return;
           e.preventDefault();
-          if (e.deltaY < 0) {
-            zoomIn();
+          if (e.ctrlKey || e.metaKey) {
+            // Ctrl/Cmd + 휠: 확대/축소
+            if (e.deltaY < 0) {
+              zoomIn();
+            } else {
+              zoomOut();
+            }
           } else {
-            zoomOut();
+            // 일반 휠: 드래그 이동 (스크롤)
+            if (zoomLevel > 1.0) {
+              const scrollSpeed = 2;
+              translateX -= e.deltaX * scrollSpeed;
+              translateY -= e.deltaY * scrollSpeed;
+              constrainPosition();
+              applyTransform();
+            }
           }
         }, { passive: false });
+
+        zoomImg.addEventListener('mousedown', (e) => {
+          if (zoomLevel > 1.0) {
+            isDragging = true;
+            dragStartX = e.clientX;
+            dragStartY = e.clientY;
+            dragStartTranslateX = translateX;
+            dragStartTranslateY = translateY;
+            zoomImg.style.cursor = 'grabbing';
+          }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+          if (!isDragging || !overlay.classList.contains('show')) return;
+          const deltaX = e.clientX - dragStartX;
+          const deltaY = e.clientY - dragStartY;
+          translateX = dragStartTranslateX + deltaX;
+          translateY = dragStartTranslateY + deltaY;
+          constrainPosition();
+          applyTransform();
+        });
+
+        document.addEventListener('mouseup', () => {
+          if (isDragging) {
+            isDragging = false;
+            if (zoomLevel > 1.0) {
+              zoomImg.style.cursor = 'move';
+            }
+          }
+        });
 
         collectAllPhotos();
 
