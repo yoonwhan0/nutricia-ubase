@@ -210,7 +210,6 @@
       <h1>아웃바운드 모니터링 대시보드</h1>
       <div style="display: flex; gap: 12px; align-items: center;">
         <span id="adminUserEmail" style="font-size: 12px; color: #666;"></span>
-        <a href="outbound.html" class="back-link">← 아웃바운드 목록으로</a>
         <button type="button" class="toolbar button" id="adminLogoutBtn" style="background: #666; color: #fff; font-size: 12px;">로그아웃</button>
       </div>
     </div>
@@ -409,10 +408,11 @@
     statsStartDate.value = today.toISOString().split('T')[0];
     statsEndDate.value = today.toISOString().split('T')[0];
 
-    // 로컬 스토리지: 분배 이력 및 처리 완료 이력 저장 (목업용 - 페이지 간 공유)
+    // 로컬 스토리지: 분배 이력 저장 (목업용 - 대시보드가 관리)
     // key: `${prefix}_${dateKey}_${id}` -> [{ account, timestamp, type: 'assign' | 'reassign' | 'complete' }]
+    // 분배 이력은 대시보드가 관리하고, CS 계정은 읽기만 함
     function loadDistributionHistoryFromStorage() {
-      const stored = localStorage.getItem('outbound_distribution_history');
+      const stored = localStorage.getItem('outbound_dashboard_distribution_history');
       if (stored) {
         try {
           return new Map(JSON.parse(stored));
@@ -426,14 +426,15 @@
     function saveDistributionHistoryToStorage(map) {
       try {
         const array = Array.from(map.entries());
-        localStorage.setItem('outbound_distribution_history', JSON.stringify(array));
+        localStorage.setItem('outbound_dashboard_distribution_history', JSON.stringify(array));
       } catch (e) {
         console.error('분배 이력 저장 실패:', e);
       }
     }
 
+    // 처리 내역은 CS 계정이 작성하고, 대시보드는 읽기만 함
     function loadProcessingHistoryFromStorage() {
-      const stored = localStorage.getItem('outbound_processing_history');
+      const stored = localStorage.getItem('outbound_cs_processing_history');
       if (stored) {
         try {
           return new Map(JSON.parse(stored));
@@ -444,17 +445,9 @@
       return new Map();
     }
 
-    function saveProcessingHistoryToStorage(map) {
-      try {
-        const array = Array.from(map.entries());
-        localStorage.setItem('outbound_processing_history', JSON.stringify(array));
-      } catch (e) {
-        console.error('처리내역 저장 실패:', e);
-      }
-    }
-
+    // 상담 이력은 CS 계정이 작성하고, 대시보드는 읽기만 함
     function loadCounselingHistoryFromStorage() {
-      const stored = localStorage.getItem('outbound_counseling_history');
+      const stored = localStorage.getItem('outbound_cs_counseling_history');
       if (stored) {
         try {
           return new Map(JSON.parse(stored));
@@ -463,15 +456,6 @@
         }
       }
       return new Map();
-    }
-
-    function saveCounselingHistoryToStorage(map) {
-      try {
-        const array = Array.from(map.entries());
-        localStorage.setItem('outbound_counseling_history', JSON.stringify(array));
-      } catch (e) {
-        console.error('상담이력 저장 실패:', e);
-      }
     }
 
     let distributionHistoryMap = loadDistributionHistoryFromStorage();
