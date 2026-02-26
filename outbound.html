@@ -415,6 +415,7 @@
     let currentDetailData = null;
     let currentUserEmail = '';
     let isSigningOut = false; // 무한 루프 방지 플래그
+    let lastCheckedEmail = ''; // 마지막으로 확인한 이메일 (중복 체크 방지)
     
     // 로컬 스토리지: 처리내역 및 상담이력 저장 (목업용 - CS 계정이 작성)
     // key: `${prefix}_${dateKey}_${id}`
@@ -541,20 +542,36 @@
     onAuthStateChanged(auth, (user) => {
       if (!auth) return;
       if (isSigningOut) return; // signOut 진행 중이면 무시
+      
       if (!user) {
-        currentUserEmail = '';
-        showLoginUI();
+        // 로그아웃 상태
+        if (currentUserEmail) {
+          currentUserEmail = '';
+          lastCheckedEmail = '';
+          showLoginUI();
+        }
         return;
       }
+      
       const email = (user.email || '').trim().toLowerCase();
+      
+      // 같은 이메일로 이미 체크했다면 무시 (중복 체크 방지)
+      if (email === lastCheckedEmail && currentUserEmail === email) {
+        return;
+      }
+      
+      lastCheckedEmail = email;
       const allowed = ALLOWED_EMAILS.some((e) => e.toLowerCase() === email);
+      
       if (allowed) {
         showAdminUI(user);
       } else {
+        // 권한이 없는 계정이면 로그아웃
         isSigningOut = true;
         signOut(auth).then(() => {
           isSigningOut = false;
           currentUserEmail = '';
+          lastCheckedEmail = '';
           showLoginUI();
           if (adminLockError) adminLockError.textContent = '이 페이지에 접근 권한이 있는 계정이 아닙니다.';
         }).catch(() => {
