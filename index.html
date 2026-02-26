@@ -354,6 +354,16 @@
         </div>
       </div>
       <div class="detail-section" style="margin-bottom: 12px;">
+        <h2 style="font-size: 14px; margin: 0 0 8px 0;">조회 구분</h2>
+        <div class="admin-search" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px;">
+          <label style="font-size: 12px;">구분:</label>
+          <select id="viewFilterSelect" style="padding: 6px 8px; font-size: 12px;">
+            <option value="all">전체</option>
+            <option value="proofError">증빙오류(반려)</option>
+            <option value="noRefundExchange">환불·교환 모두 미체크 (접수시)</option>
+          </select>
+          <span style="font-size: 11px; color: #666;">선택한 구분만 목록에 표시됩니다.</span>
+        </div>
         <h2 style="font-size: 14px; margin: 0 0 8px 0;">고객 조회</h2>
         <div class="admin-search" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
           <input type="text" id="searchName" placeholder="이름" style="padding: 6px 8px; font-size: 12px;">
@@ -490,6 +500,7 @@
     let duplicateUniqueCodes = new Set(); // 다른 고객이 사용한 고유번호 Set
     let paginationPage = 1;
     let searchFilters = { name: '', contact: '', customsCode: '', uniqueCode: '' };
+    let viewFilter = 'all'; // all | proofError | noRefundExchange
     let metaSnaps = {};
     let realtimeUnsub = [];
     let currentDetailData = null; // 모달에 열린 고객 데이터
@@ -775,12 +786,23 @@
     }
 
     function getFilteredItems() {
-      if (!searchFilters.name && !searchFilters.contact && !searchFilters.customsCode && !searchFilters.uniqueCode) return allItems;
+      let base = allItems;
+      // 조회 구분 필터 적용
+      if (viewFilter !== 'all') {
+        if (viewFilter === 'proofError') {
+          base = base.filter((d) => !!d.proofError);
+        } else if (viewFilter === 'noRefundExchange') {
+          // 환불과 교환이 모두 체크되지 않은 접수만 (접수시 체크 여부)
+          base = base.filter((d) => !d.refundDone && !d.exchangeDone);
+        }
+      }
+      // 검색 필터 적용
+      if (!searchFilters.name && !searchFilters.contact && !searchFilters.customsCode && !searchFilters.uniqueCode) return base;
       const nameKeyword = (searchFilters.name || '').trim().toLowerCase();
       const contactKeyword = (searchFilters.contact || '').trim();
       const customsKeyword = (searchFilters.customsCode || '').trim().toUpperCase();
       const uniqueCodeKeyword = (searchFilters.uniqueCode || '').trim();
-      return allItems.filter((d) => {
+      return base.filter((d) => {
         let ok = true;
         if (nameKeyword) ok = ok && (d.name || '').toLowerCase().includes(nameKeyword);
         if (contactKeyword) ok = ok && contactMatches(d.contact, searchFilters.contact);
@@ -820,6 +842,16 @@
     });
     const listRefreshBtn = document.getElementById('listRefreshBtn');
     if (listRefreshBtn) listRefreshBtn.addEventListener('click', () => loadMetaOnce());
+    
+    const viewFilterSelect = document.getElementById('viewFilterSelect');
+    if (viewFilterSelect) {
+      viewFilter = viewFilterSelect.value || 'all';
+      viewFilterSelect.addEventListener('change', () => {
+        viewFilter = viewFilterSelect.value || 'all';
+        paginationPage = 1;
+        renderTable();
+      });
+    }
 
     function getUniqueCodesArray(d) {
       let arr = d.uniqueCodesData;
@@ -948,7 +980,9 @@
       listEl.innerHTML = tableHtml + paginationHtml;
       const infoP = document.createElement('p');
       infoP.className = 'msg info';
-      infoP.textContent = (searchFilters.name || searchFilters.contact || searchFilters.customsCode ? '검색 결과 ' + total + '건 (전체 ' + allItems.length + '건 중)' : '전체 ' + allItems.length + '건') + ', 페이지당 30건. 환불/교환/잘못된정보/6캔이상 체크 변경 가능.';
+      const filterLabel = viewFilter === 'all' ? '' : (viewFilter === 'proofError' ? '증빙오류(반려)' : (viewFilter === 'noRefundExchange' ? '환불·교환 미체크' : ''));
+      const baseMsg = (searchFilters.name || searchFilters.contact || searchFilters.customsCode || searchFilters.uniqueCode) ? ('검색 결과 ' + total + '건 (전체 ' + allItems.length + '건 중)') : (filterLabel ? '[' + filterLabel + '] ' + total + '건' : '전체 ' + total + '건');
+      infoP.textContent = baseMsg + ', 페이지당 30건. 환불/교환/잘못된정보/6캔이상 체크 변경 가능.';
       listEl.insertBefore(infoP, listEl.firstChild);
 
       listEl.querySelectorAll('.admin-page-btn').forEach((btn) => {
