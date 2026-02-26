@@ -1,0 +1,1551 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>압타밀 아웃바운드 상담원 전용 페이지</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .admin-wrap { max-width: 100%; margin: 0 auto; }
+    .admin-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+    .admin-header h1 { margin: 0; font-size: 18px; }
+    .admin-table-wrapper { overflow-x: auto; margin-top: 12px; }
+    .admin-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .admin-table th, .admin-table td { border: 1px solid #ddd; padding: 2px 4px; text-align: left; vertical-align: middle; white-space: nowrap; }
+    .admin-table th { background: #f0f0f0; position: sticky; top: 0; z-index: 1; }
+    .admin-table .cell-text { display: inline-block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .admin-table .cell-seq { text-align: center; font-weight: 600; }
+    .admin-table .cell-project { text-align: center; }
+    .admin-pagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; }
+    .admin-page-info { font-size: 12px; color: #555; }
+    .status-indicator { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #ccc; display: inline-block; }
+    .status-dot.ok { background: #28a745; }
+    .status-dot.off { background: #dc3545; }
+    .btn-load { margin-bottom: 8px; }
+    .cell-tooltip-bubble {
+      position: fixed;
+      z-index: 99999;
+      max-width: 320px;
+      padding: 10px 14px;
+      background: #2d2d2d;
+      color: #fff;
+      border-radius: 10px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.15s ease, visibility 0.15s ease;
+    }
+    .cell-tooltip-bubble.show {
+      opacity: 1;
+      visibility: visible;
+    }
+    .admin-table .cell-text, .admin-table td[data-fulltext] { cursor: default; }
+    .admin-search .btn,
+    .admin-search a.btn {
+      padding: 8px 14px;
+      font-size: 13px;
+      min-height: 36px;
+      box-sizing: border-box;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      white-space: nowrap;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .admin-search { align-items: center; }
+    /* 전체화면 상세 모달 (사진 + 고객정보/체크) */
+    .detail-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(0,0,0,0.6);
+      overflow: auto;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    .detail-modal-overlay.show { display: block; }
+    .detail-modal-box {
+      max-width: 1100px;
+      margin: 0 auto 24px;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+      overflow: hidden;
+      min-height: 80vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .detail-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 20px;
+      background: #1a1a1a;
+      color: #fff;
+      font-size: 16px;
+    }
+    .detail-modal-close {
+      padding: 8px 16px;
+      background: #444;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .detail-modal-close:hover { background: #555; }
+    .detail-modal-body {
+      display: flex;
+      flex: 1;
+      flex-wrap: wrap;
+      gap: 0;
+    }
+    .detail-modal-photos {
+      flex: 1 1 420px;
+      min-width: 280px;
+      padding: 20px;
+      border-right: 1px solid #e0e0e0;
+      overflow: auto;
+    }
+    .detail-modal-photos h3 { margin: 0 0 12px 0; font-size: 14px; color: #333; }
+    .detail-modal-photo-box { margin-bottom: 20px; }
+    .detail-modal-photo-box .caption { font-size: 12px; color: #666; margin-bottom: 8px; }
+    .detail-modal-photo-box img {
+      max-width: 100%;
+      max-height: 220px;
+      cursor: pointer;
+      display: block;
+      border: 1px solid #eee;
+      border-radius: 4px;
+    }
+    .detail-modal-photo-box .no-image { color: #999; font-size: 13px; }
+    .detail-modal-info {
+      flex: 1 1 380px;
+      min-width: 280px;
+      padding: 20px;
+      overflow: auto;
+    }
+    .detail-modal-info h3 { margin: 0 0 12px 0; font-size: 14px; color: #333; }
+    .detail-modal-info .info-row { margin-bottom: 10px; font-size: 13px; }
+    .detail-modal-info .info-row strong { display: inline-block; width: 100px; color: #555; }
+    .detail-modal-flags { margin-top: 20px; padding-top: 16px; border-top: 1px solid #eee; }
+    .detail-modal-flags label { display: block; margin-bottom: 10px; font-size: 14px; cursor: pointer; }
+    .detail-modal-flags input[type="checkbox"] { margin-right: 8px; }
+    .detail-modal-flags textarea {
+      width: 100%;
+      min-height: 80px;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 13px;
+      margin-top: 8px;
+      resize: vertical;
+    }
+    .processing-history {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid #eee;
+    }
+    .processing-history h4 { margin: 0 0 8px 0; font-size: 13px; color: #333; }
+    .processing-history-item {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 6px;
+      padding: 6px;
+      background: #f9f9f9;
+      border-radius: 4px;
+    }
+    .processing-history-item strong { color: #333; }
+    /* 상담이력 전용 간단한 모달 */
+    .counseling-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 10001;
+      background: rgba(0,0,0,0.6);
+      overflow: auto;
+      padding: 20px;
+      box-sizing: border-box;
+      align-items: center;
+      justify-content: center;
+    }
+    .counseling-modal-overlay.show { display: flex; }
+    .counseling-modal-box {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+      max-width: 600px;
+      width: 100%;
+      padding: 0;
+      overflow: hidden;
+    }
+    .counseling-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      background: #1a1a1a;
+      color: #fff;
+      font-size: 16px;
+    }
+    .counseling-modal-close {
+      padding: 6px 12px;
+      background: #444;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .counseling-modal-close:hover { background: #555; }
+    .counseling-modal-body {
+      padding: 20px;
+    }
+    .counseling-modal-body h3 {
+      margin: 0 0 12px 0;
+      font-size: 15px;
+      color: #333;
+    }
+    .counseling-modal-body textarea {
+      width: 100%;
+      min-height: 150px;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      resize: vertical;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .counseling-modal-body .customer-info {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 16px;
+      padding: 10px;
+      background: #f9f9f9;
+      border-radius: 6px;
+    }
+    .counseling-modal-body .btn-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+      justify-content: flex-end;
+    }
+    .counseling-modal-body .btn {
+      width: auto;
+      margin: 0;
+      padding: 10px 20px;
+    }
+  </style>
+</head>
+<body>
+  <div id="cellTooltip" class="cell-tooltip-bubble" aria-hidden="true"></div>
+  <div class="admin-lock-backdrop" id="adminLock">
+    <div class="admin-lock-modal">
+      <h2>아웃바운드 상담원 전용 페이지</h2>
+      <input type="email" class="admin-lock-input" id="adminEmail" placeholder="이메일" autocomplete="username">
+      <input type="password" class="admin-lock-input" id="adminPassword" placeholder="비밀번호" autocomplete="current-password">
+      <div class="admin-lock-error" id="adminLockError"></div>
+      <button type="button" class="btn btn-primary" id="adminUnlockBtn" style="width:100%;">로그인</button>
+    </div>
+  </div>
+
+  <div class="admin-wrap">
+    <div id="listView" style="display:none;">
+      <div class="admin-header">
+        <h1>압타밀 아웃바운드 상담원 전용 페이지</h1>
+        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+          <span id="adminUserEmail" style="font-size: 12px; color: #666;"></span>
+          <button type="button" class="btn" id="adminLogoutBtn" style="background: #666; color: #fff; font-size: 12px;">로그아웃</button>
+          <div class="status-indicator">
+            <span class="status-dot" id="statusDotAdmin"></span>
+            <span id="statusTextAdmin">서버 연결 확인 중…</span>
+          </div>
+        </div>
+      </div>
+      <div class="detail-section" style="margin-bottom: 12px;">
+        <h2 style="font-size: 14px; margin: 0 0 8px 0;">조회 구분</h2>
+        <div class="admin-search" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px;">
+          <label style="font-size: 12px;">구분:</label>
+          <select id="viewFilterSelect" style="padding: 6px 8px; font-size: 12px;">
+            <option value="all">전체</option>
+            <option value="proofError">증빙오류(반려)</option>
+            <option value="noRefundExchange">환불·교환 모두 미체크 (접수시)</option>
+            <option value="noCallComplete">유선안내 미완료</option>
+          </select>
+          <span style="font-size: 11px; color: #666;">선택한 구분만 목록에 표시됩니다.</span>
+        </div>
+        <h2 style="font-size: 14px; margin: 0 0 8px 0;">고객 조회</h2>
+        <div class="admin-search" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+          <input type="text" id="searchName" placeholder="이름" style="padding: 6px 8px; font-size: 12px;">
+          <input type="text" id="searchContact" placeholder="전화번호" style="padding: 6px 8px; font-size: 12px;">
+          <input type="text" id="searchCustoms" placeholder="통관번호(개인통관부호)" style="padding: 6px 8px; font-size: 12px;">
+          <input type="text" id="searchUniqueCode" placeholder="고유번호" style="padding: 6px 8px; font-size: 12px;">
+          <button type="button" class="btn btn-primary" id="searchBtn" style="width: auto; margin-top: -1px;">검색</button>
+          <button type="button" class="btn" id="searchResetBtn" style="width: auto; background: #777; color: #fff;">초기화</button>
+          <button type="button" class="btn" id="listRefreshBtn" style="width: auto; background: #0a5; color: #fff;">목록 새로고침</button>
+          <a href="outbound_dashboard.html" target="_blank" rel="noopener" class="btn" style="width: auto; background: #17a; color: #fff;">모니터링 대시보드</a>
+        </div>
+      </div>
+      <div style="margin-bottom: 12px;">
+        <p class="msg ubase-notice" style="background:#fff3cd; color:#856404; border-left:4px solid #ffc107;"><strong>공지:</strong> 아웃바운드 상담원 전용 페이지입니다. 유선안내 완료 체크 및 상담이력 기재가 가능합니다.</p>
+      </div>
+      <div id="listMessage"></div>
+      <div id="submissionList"></div>
+    </div>
+  </div>
+
+  <!-- 전체화면 상세 모달: 사진 + 고객정보/체크 -->
+  <div id="detailModal" class="detail-modal-overlay" aria-hidden="true">
+    <div class="detail-modal-box">
+      <div class="detail-modal-header">
+        <span id="detailModalTitle">고객 상세 · 사진 보기</span>
+        <button type="button" class="detail-modal-close" id="detailModalClose">닫기</button>
+      </div>
+      <div class="detail-modal-body">
+        <div class="detail-modal-photos" id="detailModalPhotos">사진 불러오는 중…</div>
+        <div class="detail-modal-info" id="detailModalInfo">
+          <h3>고객 정보</h3>
+          <div id="detailModalInfoRows"></div>
+          <div class="detail-modal-flags" id="detailModalFlags"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 상담이력 전용 간단한 모달 -->
+  <div id="counselingModal" class="counseling-modal-overlay" aria-hidden="true">
+    <div class="counseling-modal-box">
+      <div class="counseling-modal-header">
+        <span id="counselingModalTitle">상담이력 입력</span>
+        <button type="button" class="counseling-modal-close" id="counselingModalClose">닫기</button>
+      </div>
+      <div class="counseling-modal-body">
+        <div id="counselingModalCustomerInfo" class="customer-info"></div>
+        <div id="counselingModalHistoryList" style="margin-bottom: 16px;"></div>
+        <h3>새 상담이력 입력</h3>
+        <textarea id="counselingModalTextarea" placeholder="상담이력을 입력하세요."></textarea>
+        <div class="btn-group">
+          <button type="button" class="btn" id="counselingModalCancelBtn" style="background: #777; color: #fff;">취소</button>
+          <button type="button" class="btn btn-primary" id="counselingModalSaveBtn">저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+    import {
+      getDatabase,
+      ref as dbRef,
+      get,
+      child,
+      onValue,
+      update,
+      push,
+      serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+    import {
+      getAuth,
+      signInWithEmailAndPassword,
+      onAuthStateChanged,
+      signOut
+    } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-auth.js";
+
+    // 아웃바운드 상담원 계정 (cs1@ubase.co.kr ~ cs10@ubase.co.kr)
+    const ALLOWED_EMAILS = [];
+    for (let i = 1; i <= 10; i++) {
+      ALLOWED_EMAILS.push(`cs${i}@ubase.co.kr`);
+    }
+
+    const PREFIXES = ['nutricia-x9fQ2kM7-1', 'nutricia-aL4pZ8Tq-2', 'nutricia-nu7VnCwR3H-3', 'nutricia-MK2rP9dS-4'];
+    const PROJECT_LABELS = ['아이베', '림인터네셔널', '크린랩', '몰테일'];
+    const PHOTO_VIEW_URL = 'photo_view.html';
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCxNwnAzMn0JUkHGDXgY4taTPJYeABDohg",
+      authDomain: "eibe-nutricia.firebaseapp.com",
+      databaseURL: "https://eibe-nutricia-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "eibe-nutricia",
+      storageBucket: "eibe-nutricia.firebasestorage.app",
+      messagingSenderId: "605906618980",
+      appId: "1:605906618980:web:d947540696a573c4856d71"
+    };
+
+    let app, db, auth;
+    try {
+      app = initializeApp(firebaseConfig);
+      db = getDatabase(app);
+      auth = getAuth(app);
+    } catch (err) {
+      console.error('Firebase 초기화 오류:', err);
+    }
+
+    const adminLock = document.getElementById('adminLock');
+    const adminEmailInput = document.getElementById('adminEmail');
+    const adminKeyInput = document.getElementById('adminPassword');
+    const adminLockError = document.getElementById('adminLockError');
+    const adminUnlockBtn = document.getElementById('adminUnlockBtn');
+    const adminLogoutBtn = document.getElementById('adminLogoutBtn');
+    const adminUserEmailEl = document.getElementById('adminUserEmail');
+    const listEl = document.getElementById('submissionList');
+    const listView = document.getElementById('listView');
+    const statusDotAdmin = document.getElementById('statusDotAdmin');
+    const statusTextAdmin = document.getElementById('statusTextAdmin');
+    const searchNameInput = document.getElementById('searchName');
+    const searchContactInput = document.getElementById('searchContact');
+    const searchCustomsInput = document.getElementById('searchCustoms');
+    const searchBtn = document.getElementById('searchBtn');
+    const searchResetBtn = document.getElementById('searchResetBtn');
+
+    const PAGE_SIZE = 30;
+    let allItems = [];
+    let paginationPage = 1;
+    let searchFilters = { name: '', contact: '', customsCode: '', uniqueCode: '' };
+    let viewFilter = 'all';
+    let metaSnaps = {};
+    let currentDetailData = null;
+    let currentUserEmail = '';
+    
+    // 로컬 스토리지: 처리내역 및 상담이력 저장 (목업용 - 페이지 간 공유)
+    // key: `${prefix}_${dateKey}_${id}`
+    function loadProcessingHistoryFromStorage() {
+      const stored = localStorage.getItem('outbound_processing_history');
+      if (stored) {
+        try {
+          return new Map(JSON.parse(stored));
+        } catch (e) {
+          return new Map();
+        }
+      }
+      return new Map();
+    }
+
+    function saveProcessingHistoryToStorage(map) {
+      try {
+        const array = Array.from(map.entries());
+        localStorage.setItem('outbound_processing_history', JSON.stringify(array));
+      } catch (e) {
+        console.error('처리내역 저장 실패:', e);
+      }
+    }
+
+    function loadCounselingHistoryFromStorage() {
+      const stored = localStorage.getItem('outbound_counseling_history');
+      if (stored) {
+        try {
+          return new Map(JSON.parse(stored));
+        } catch (e) {
+          return new Map();
+        }
+      }
+      return new Map();
+    }
+
+    function saveCounselingHistoryToStorage(map) {
+      try {
+        const array = Array.from(map.entries());
+        localStorage.setItem('outbound_counseling_history', JSON.stringify(array));
+      } catch (e) {
+        console.error('상담이력 저장 실패:', e);
+      }
+    }
+
+    function loadDistributionHistoryFromStorage() {
+      const stored = localStorage.getItem('outbound_distribution_history');
+      if (stored) {
+        try {
+          return new Map(JSON.parse(stored));
+        } catch (e) {
+          return new Map();
+        }
+      }
+      return new Map();
+    }
+
+    let processingHistoryMap = loadProcessingHistoryFromStorage();
+    let counselingHistoryMap = loadCounselingHistoryFromStorage();
+    let distributionHistoryMap = loadDistributionHistoryFromStorage();
+
+    function normalizePhone(v) {
+      return (v || '').replace(/\D/g, '');
+    }
+    function contactMatches(storedContact, searchContact) {
+      const s = normalizePhone(storedContact);
+      const q = normalizePhone(searchContact);
+      if (!q) return true;
+      if (!s) return false;
+      return s === q || s === '82' + q || s.replace(/^82/, '') === q;
+    }
+
+    let statusTimeout = null;
+    let lastConnectedState = true;
+    
+    function setStatus(connected) {
+      if (!statusDotAdmin || !statusTextAdmin) return;
+      if (connected === lastConnectedState) return;
+      lastConnectedState = connected;
+      if (statusTimeout) {
+        clearTimeout(statusTimeout);
+        statusTimeout = null;
+      }
+      if (connected) {
+        statusDotAdmin.classList.remove('ok', 'off');
+        statusDotAdmin.classList.add('ok');
+        statusTextAdmin.textContent = '서버 연결 정상';
+      } else {
+        statusTimeout = setTimeout(() => {
+          statusDotAdmin.classList.remove('ok', 'off');
+          statusDotAdmin.classList.add('off');
+          statusTextAdmin.textContent = '서버 연결 안 됨';
+        }, 1000);
+      }
+    }
+
+    if (db) {
+      onValue(dbRef(db, '.info/connected'), (snap) => setStatus(snap.val() === true), () => setStatus(false));
+    }
+
+    function doLoad() {
+      if (!db) {
+        listEl.innerHTML = '<div class="msg error">Firebase가 초기화되지 않았습니다.</div>';
+        return;
+      }
+      loadMetaOnce();
+    }
+
+    function showAdminUI(user) {
+      if (adminLock) adminLock.style.display = 'none';
+      listView.style.display = 'block';
+      currentUserEmail = user.email || '';
+      if (adminUserEmailEl) adminUserEmailEl.textContent = currentUserEmail;
+      doLoad();
+    }
+    function showLoginUI() {
+      if (adminLock) adminLock.style.display = 'flex';
+      listView.style.display = 'none';
+      if (adminLockError) adminLockError.textContent = '';
+    }
+
+    onAuthStateChanged(auth, (user) => {
+      if (!auth) return;
+      if (!user) {
+        showLoginUI();
+        return;
+      }
+      const email = (user.email || '').trim().toLowerCase();
+      const allowed = ALLOWED_EMAILS.some((e) => e.toLowerCase() === email);
+      if (allowed) {
+        showAdminUI(user);
+      } else {
+        signOut(auth).then(() => {
+          showLoginUI();
+          if (adminLockError) adminLockError.textContent = '이 페이지에 접근 권한이 있는 계정이 아닙니다.';
+        });
+      }
+    });
+
+    function handleLogin() {
+      const email = (adminEmailInput && adminEmailInput.value) ? adminEmailInput.value.trim() : '';
+      const password = adminKeyInput ? adminKeyInput.value : '';
+      if (!email || !password) {
+        adminLockError.textContent = '이메일과 비밀번호를 입력해 주세요.';
+        return;
+      }
+      adminLockError.textContent = '';
+      adminUnlockBtn.disabled = true;
+      signInWithEmailAndPassword(auth, email, password)
+        .then(() => { adminUnlockBtn.disabled = false; })
+        .catch((err) => {
+          adminUnlockBtn.disabled = false;
+          if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+            adminLockError.textContent = '이메일 또는 비밀번호가 올바르지 않습니다.';
+          } else {
+            adminLockError.textContent = err.message || '로그인에 실패했습니다.';
+          }
+        });
+    }
+    adminUnlockBtn.addEventListener('click', handleLogin);
+    adminKeyInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') handleLogin(); });
+    if (adminEmailInput) adminEmailInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') handleLogin(); });
+    if (adminLogoutBtn) adminLogoutBtn.addEventListener('click', () => { signOut(auth).then(() => showLoginUI()); });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && listView && listView.style.display !== 'none') {
+        if (Object.keys(metaSnaps).length === 0) loadMetaOnce();
+      }
+    });
+
+    function formatDate(t) {
+      if (!t) return '-';
+      const d = typeof t === 'number' ? new Date(t) : new Date(t);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ' ' +
+        String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    }
+
+    function escapeAttr(s) {
+      if (s == null) return '';
+      return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function escapeHtml(s) {
+      if (s == null) return '';
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function buildItemsFromMetaSnaps() {
+      const items = [];
+      PREFIXES.forEach((prefix, idx) => {
+        const snap = metaSnaps[prefix];
+        if (!snap || !snap.exists()) return;
+        snap.forEach((dateSnap) => {
+          const dateKey = dateSnap.key;
+          if (!/^\d{8}$/.test(dateKey)) return;
+          dateSnap.forEach((inner) => {
+            items.push({
+              _prefix: prefix,
+              _projectIndex: idx + 1,
+              id: inner.key,
+              _dateKey: dateKey,
+              _isLegacy: false,
+              ...inner.val()
+            });
+          });
+        });
+      });
+      items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      const total = items.length;
+      items.forEach((it, i) => { it._globalSeq = total - i; });
+      return items;
+    }
+
+    function applyMetaAndRender() {
+      if (Object.keys(metaSnaps).length !== PREFIXES.length) return;
+      allItems = buildItemsFromMetaSnaps();
+      paginationPage = 1;
+      renderTable();
+    }
+
+    async function loadMetaOnce() {
+      if (!db || !listEl) return;
+      const refreshBtn = document.getElementById('listRefreshBtn');
+      listEl.innerHTML = '<p class="msg info">4개 프로젝트 데이터 로드 중…</p>';
+      if (refreshBtn) refreshBtn.disabled = true;
+      metaSnaps = {};
+      try {
+        for (const prefix of PREFIXES) {
+          const snap = await get(dbRef(db, prefix + '/submissions_meta'));
+          metaSnaps[prefix] = snap;
+        }
+        applyMetaAndRender();
+      } catch (err) {
+        listEl.innerHTML = '<p class="msg error">로드 실패: ' + (err.message || err) + '</p>';
+      }
+      if (refreshBtn) refreshBtn.disabled = false;
+    }
+
+    function getFilteredItems() {
+      let base = allItems;
+      
+      // 아웃바운드 상담원은 본인에게 분배된 건만 보여야 함
+      if (currentUserEmail && ALLOWED_EMAILS.some(e => e.toLowerCase() === currentUserEmail.toLowerCase())) {
+        // 최신 분배 이력 로드
+        distributionHistoryMap = loadDistributionHistoryFromStorage();
+        base = base.filter((d) => {
+          const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
+          const history = distributionHistoryMap.get(key) || [];
+          if (!Array.isArray(history) || history.length === 0) {
+            return false; // 분배되지 않은 건은 보이지 않음
+          }
+          const latest = history[history.length - 1];
+          // 본인에게 분배된 건만 (대소문자 무시)
+          return latest && latest.account && latest.account.toLowerCase() === currentUserEmail.toLowerCase();
+        });
+      }
+      
+      if (viewFilter !== 'all') {
+        if (viewFilter === 'proofError') {
+          base = base.filter((d) => !!d.proofError);
+        } else if (viewFilter === 'noRefundExchange') {
+          base = base.filter((d) => !d.refundDone && !d.exchangeDone);
+        } else if (viewFilter === 'noCallComplete') {
+          base = base.filter((d) => !d.callComplete);
+        }
+      }
+      if (!searchFilters.name && !searchFilters.contact && !searchFilters.customsCode && !searchFilters.uniqueCode) return base;
+      const nameKeyword = (searchFilters.name || '').trim().toLowerCase();
+      const contactKeyword = (searchFilters.contact || '').trim();
+      const customsKeyword = (searchFilters.customsCode || '').trim().toUpperCase();
+      const uniqueCodeKeyword = (searchFilters.uniqueCode || '').trim();
+      return base.filter((d) => {
+        let ok = true;
+        if (nameKeyword) ok = ok && (d.name || '').toLowerCase().includes(nameKeyword);
+        if (contactKeyword) ok = ok && contactMatches(d.contact, searchFilters.contact);
+        if (customsKeyword) ok = ok && (d.customsCode || '').toUpperCase().includes(customsKeyword);
+        if (uniqueCodeKeyword) {
+          const u = getUniqueCodesArray(d);
+          const hasMatchingCode = u.some((uc) => {
+            const code = (uc.uniqueCode || '').trim();
+            return code && code.includes(uniqueCodeKeyword);
+          });
+          ok = ok && hasMatchingCode;
+        }
+        return ok;
+      });
+    }
+
+    const searchUniqueCodeInput = document.getElementById('searchUniqueCode');
+    
+    if (searchBtn) searchBtn.addEventListener('click', () => {
+      searchFilters = {
+        name: (searchNameInput && searchNameInput.value) ? searchNameInput.value.trim() : '',
+        contact: (searchContactInput && searchContactInput.value) ? searchContactInput.value.trim() : '',
+        customsCode: (searchCustomsInput && searchCustomsInput.value) ? searchCustomsInput.value.trim() : '',
+        uniqueCode: (searchUniqueCodeInput && searchUniqueCodeInput.value) ? searchUniqueCodeInput.value.trim() : ''
+      };
+      paginationPage = 1;
+      renderTable();
+    });
+    if (searchResetBtn) searchResetBtn.addEventListener('click', () => {
+      if (searchNameInput) searchNameInput.value = '';
+      if (searchContactInput) searchContactInput.value = '';
+      if (searchCustomsInput) searchCustomsInput.value = '';
+      if (searchUniqueCodeInput) searchUniqueCodeInput.value = '';
+      searchFilters = { name: '', contact: '', customsCode: '', uniqueCode: '' };
+      paginationPage = 1;
+      renderTable();
+    });
+    const listRefreshBtn = document.getElementById('listRefreshBtn');
+    if (listRefreshBtn) listRefreshBtn.addEventListener('click', () => loadMetaOnce());
+    
+    const viewFilterSelect = document.getElementById('viewFilterSelect');
+    if (viewFilterSelect) {
+      viewFilter = viewFilterSelect.value || 'all';
+      viewFilterSelect.addEventListener('change', () => {
+        viewFilter = viewFilterSelect.value || 'all';
+        paginationPage = 1;
+        renderTable();
+      });
+    }
+
+    function getUniqueCodesArray(d) {
+      let arr = d.uniqueCodesData;
+      if (Array.isArray(arr)) return arr;
+      const codes = Array.isArray(d.uniqueCodes) ? d.uniqueCodes : (d.uniqueCode ? [d.uniqueCode] : []);
+      return codes.map(code => ({ productName: '', batchNumber: '', uniqueCode: code || '' }));
+    }
+
+    // 처리내역 기록 함수 (목업 - 로컬 메모리 저장)
+    // TODO: 확정 후 주석 해제 필요 - Firebase 저장
+    /*
+    async function addProcessingHistory(id, dateKey, prefix, changes) {
+      if (!db || !currentUserEmail) return;
+      const historyPath = prefix + '/processing_history/' + dateKey + '/' + id;
+      const historyRef = dbRef(db, historyPath);
+      const historyItem = {
+        account: currentUserEmail,
+        timestamp: Date.now(),
+        changes: changes
+      };
+      try {
+        await push(historyRef, historyItem);
+      } catch (err) {
+        console.error('처리내역 기록 오류:', err);
+      }
+    }
+    */
+    // 목업: localStorage에 저장
+    async function addProcessingHistory(id, dateKey, prefix, changes) {
+      if (!currentUserEmail) return;
+      const key = `${prefix}_${dateKey}_${id}`;
+      if (!processingHistoryMap.has(key)) {
+        processingHistoryMap.set(key, []);
+      }
+      const historyItem = {
+        account: currentUserEmail,
+        timestamp: Date.now(),
+        changes: changes
+      };
+      processingHistoryMap.get(key).push(historyItem);
+      // 최신순 정렬
+      processingHistoryMap.get(key).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      saveProcessingHistoryToStorage(processingHistoryMap);
+      console.log('[목업] 처리내역 기록:', { id, dateKey, prefix, changes, account: currentUserEmail });
+      return Promise.resolve();
+    }
+
+    // 처리내역 로드 함수 (목업 - 로컬 메모리에서 로드)
+    // TODO: 확정 후 주석 해제 필요 - Firebase에서 로드
+    /*
+    async function loadProcessingHistory(id, dateKey, prefix) {
+      if (!db) return [];
+      const historyPath = prefix + '/processing_history/' + dateKey + '/' + id;
+      try {
+        const snap = await get(dbRef(db, historyPath));
+        if (!snap.exists()) return [];
+        const history = [];
+        snap.forEach((child) => {
+          history.push(child.val());
+        });
+        return history.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      } catch (err) {
+        console.error('처리내역 로드 오류:', err);
+        return [];
+      }
+    }
+    */
+    // 목업: localStorage에서 로드
+    async function loadProcessingHistory(id, dateKey, prefix) {
+      processingHistoryMap = loadProcessingHistoryFromStorage(); // 최신 데이터 로드
+      const key = `${prefix}_${dateKey}_${id}`;
+      const history = processingHistoryMap.get(key) || [];
+      return Array.isArray(history) ? history.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)) : [];
+    }
+
+    // 상담이력 추가 함수 (목업 - 로컬 메모리 저장)
+    async function addCounselingHistory(id, dateKey, prefix, content) {
+      if (!currentUserEmail || !content || !content.trim()) return;
+      const key = `${prefix}_${dateKey}_${id}`;
+      if (!counselingHistoryMap.has(key)) {
+        counselingHistoryMap.set(key, []);
+      }
+      const historyItem = {
+        account: currentUserEmail,
+        timestamp: Date.now(),
+        content: content.trim()
+      };
+      counselingHistoryMap.get(key).push(historyItem);
+      // 최신순 정렬
+      counselingHistoryMap.get(key).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      saveCounselingHistoryToStorage(counselingHistoryMap);
+      console.log('[목업] 상담이력 추가:', { id, dateKey, prefix, content, account: currentUserEmail });
+      return Promise.resolve();
+    }
+
+    // 상담이력 로드 함수 (목업 - 로컬 메모리에서 로드)
+    async function loadCounselingHistory(id, dateKey, prefix) {
+      counselingHistoryMap = loadCounselingHistoryFromStorage(); // 최신 데이터 로드
+      const key = `${prefix}_${dateKey}_${id}`;
+      const history = counselingHistoryMap.get(key) || [];
+      return Array.isArray(history) ? history.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)) : [];
+    }
+
+    function renderTable() {
+      const filteredItems = getFilteredItems();
+      if (!filteredItems.length) {
+        listEl.innerHTML = '<p class="msg info">' + (allItems.length ? '조건에 맞는 접수가 없습니다.' : '접수된 건이 없습니다.') + '</p>';
+        return;
+      }
+      const total = filteredItems.length;
+      const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+      if (paginationPage < 1) paginationPage = 1;
+      if (paginationPage > totalPages) paginationPage = totalPages;
+      const start = (paginationPage - 1) * PAGE_SIZE;
+      const pageItems = filteredItems.slice(start, start + PAGE_SIZE);
+
+      const headerRow =
+        '<th class="cell-seq">순번</th>' +
+        '<th class="cell-project">접수경로</th>' +
+        '<th>사진 보기</th>' +
+        '<th>이름</th><th>연락처</th><th>주소</th><th>상세 주소</th><th>개인통관부호</th>' +
+        '<th>접수ID</th><th>접수일시</th>' +
+        '<th>환불</th><th>교환</th><th>잘못된정보</th><th>6캔이상</th><th>환불완료</th><th>교환완료</th><th>증빙오류(반려)</th><th>사유</th>' +
+        '<th>유선안내완료</th><th>상담이력</th><th>처리내역</th>';
+
+      let rowsHtml = '';
+      pageItems.forEach((d) => {
+        const seq = d._globalSeq;
+        const proj = PROJECT_LABELS[d._projectIndex - 1] || '';
+        const prefix = d._prefix;
+        const dateKey = d._dateKey || '';
+        const isLegacy = !!d._isLegacy;
+
+        const refundC = d.refundDone ? ' checked' : '';
+        const exchangeC = d.exchangeDone ? ' checked' : '';
+        const invalidC = d.invalidInfo ? ' checked' : '';
+        const sixCansC = d.sixCansOrMore ? ' checked' : '';
+        const callCompleteC = d.callComplete ? ' checked' : '';
+        const locked = !!(d.refundComplete || d.exchangeComplete);
+        const lockedAttr = locked ? ' disabled title="처리 완료 건 — 수정 불가"' : '';
+
+        rowsHtml += '<tr data-id="' + escapeAttr(d.id) + '" data-date-key="' + escapeAttr(dateKey) + '" data-legacy="' + (isLegacy ? '1' : '0') + '" data-prefix="' + escapeAttr(prefix) + '" data-project-index="' + d._projectIndex + '" data-locked="' + (locked ? '1' : '0') + '">';
+        rowsHtml += '<td class="cell-seq">' + seq + '</td>';
+        rowsHtml += '<td class="cell-project">' + proj + '</td>';
+        rowsHtml += '<td><button type="button" class="btn btn-primary photo-view-btn" style="font-size:11px;padding:2px 6px;">사진 보기</button></td>';
+        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.name || '-') + '</span></td>';
+        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.contact || '-') + '</span></td>';
+        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.address || '-') + '</span></td>';
+        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.addressDetail || '-') + '</span></td>';
+        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.customsCode || '-') + '</span></td>';
+        rowsHtml += '<td>' + escapeHtml(d.id || '-') + '</td>';
+        rowsHtml += '<td>' + formatDate(d.createdAt) + '</td>';
+        rowsHtml += '<td><label><input type="checkbox" class="list-cb-refund" data-field="refundDone"' + refundC + lockedAttr + '> 환불</label></td>';
+        rowsHtml += '<td><label><input type="checkbox" class="list-cb-exchange" data-field="exchangeDone"' + exchangeC + lockedAttr + '> 교환</label></td>';
+        rowsHtml += '<td><label><input type="checkbox" class="list-cb-invalid" data-field="invalidInfo"' + invalidC + lockedAttr + '> 잘못</label></td>';
+        rowsHtml += '<td><label><input type="checkbox" class="list-cb-sixCans" data-field="sixCansOrMore"' + sixCansC + '> 6캔이상</label></td>';
+        rowsHtml += '<td class="cell-flag">' + (d.refundComplete ? 'Y' : '-') + '</td>';
+        rowsHtml += '<td class="cell-flag">' + (d.exchangeComplete ? 'Y' : '-') + '</td>';
+        rowsHtml += '<td class="cell-flag">' + (d.proofError ? 'Y' : '-') + '</td>';
+        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.proofErrorReason || '-') + '</span></td>';
+        rowsHtml += '<td><label><input type="checkbox" class="list-cb-callComplete" data-field="callComplete"' + callCompleteC + '> 완료</label></td>';
+        rowsHtml += '<td><button type="button" class="btn btn-primary detail-view-btn" style="font-size:11px;padding:2px 6px;">상담이력</button></td>';
+        rowsHtml += '<td><button type="button" class="btn btn-primary history-view-btn" style="font-size:11px;padding:2px 6px;">처리내역</button></td>';
+        rowsHtml += '</tr>';
+      });
+
+      const tableHtml =
+        '<div class="admin-table-wrapper">' +
+          '<table class="admin-table">' +
+            '<thead><tr>' + headerRow + '</tr></thead>' +
+            '<tbody>' + rowsHtml + '</tbody>' +
+          '</table>' +
+        '</div>';
+      const paginationHtml =
+        '<div class="admin-pagination">' +
+          '<button type="button" class="btn btn-primary admin-page-btn" data-page="' + (paginationPage - 1) + '" ' + (paginationPage <= 1 ? 'disabled' : '') + '>이전</button>' +
+          '<span class="admin-page-info">페이지 ' + paginationPage + ' / ' + totalPages + ' (총 ' + total + '건)</span>' +
+          '<button type="button" class="btn btn-primary admin-page-btn" data-page="' + (paginationPage + 1) + '" ' + (paginationPage >= totalPages ? 'disabled' : '') + '>다음</button>' +
+          '<button type="button" class="btn btn-primary admin-page-btn" data-page="' + totalPages + '" ' + (paginationPage >= totalPages ? 'disabled' : '') + '>마지막</button>' +
+        '</div>';
+
+      listEl.innerHTML = tableHtml + paginationHtml;
+      const infoP = document.createElement('p');
+      infoP.className = 'msg info';
+      const filterLabel = viewFilter === 'all' ? '' : (viewFilter === 'proofError' ? '증빙오류(반려)' : (viewFilter === 'noRefundExchange' ? '환불·교환 미체크' : '유선안내 미완료'));
+      const baseMsg = (searchFilters.name || searchFilters.contact || searchFilters.customsCode || searchFilters.uniqueCode) ? ('검색 결과 ' + total + '건 (전체 ' + allItems.length + '건 중)') : (filterLabel ? '[' + filterLabel + '] ' + total + '건' : '전체 ' + total + '건');
+      infoP.textContent = baseMsg + ', 페이지당 30건. 환불/교환/잘못된정보/6캔이상/유선안내완료 체크 변경 가능.';
+      listEl.insertBefore(infoP, listEl.firstChild);
+
+      listEl.querySelectorAll('.admin-page-btn').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const targetPage = Number(btn.getAttribute('data-page'));
+          if (!targetPage || targetPage === paginationPage) return;
+          paginationPage = targetPage;
+          renderTable();
+        });
+      });
+
+      attachCheckboxListeners();
+      attachPhotoViewButtons();
+      attachDetailViewButtons();
+      attachHistoryViewButtons();
+    }
+
+    function attachCheckboxListeners() {
+      const tbody = listEl.querySelector('tbody');
+      if (!tbody) return;
+      tbody.querySelectorAll('tr').forEach((row) => {
+        row.querySelectorAll('.list-cb-refund, .list-cb-exchange, .list-cb-invalid, .list-cb-sixCans, .list-cb-callComplete').forEach((cb) => {
+          cb.addEventListener('change', () => {
+            saveFlagsOnly(row);
+          });
+        });
+      });
+    }
+
+    async function saveFlagsOnly(row) {
+      const id = row.getAttribute('data-id');
+      const dateKey = (row.getAttribute('data-date-key') || '').trim();
+      const isLegacy = row.getAttribute('data-legacy') === '1';
+      const prefix = (row.getAttribute('data-prefix') || '').trim();
+      if (!id || !prefix || !db) return;
+      if (!isLegacy && !dateKey) {
+        alert('저장할 수 없습니다. 접수 정보(dateKey)가 없습니다.');
+        return;
+      }
+      const item = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
+      const locked = !!(item && (item.refundComplete || item.exchangeComplete));
+      
+      let refundDone = !!row.querySelector('.list-cb-refund')?.checked;
+      let exchangeDone = !!row.querySelector('.list-cb-exchange')?.checked;
+      let invalidInfo = !!row.querySelector('.list-cb-invalid')?.checked;
+      const sixCansOrMore = !!row.querySelector('.list-cb-sixCans')?.checked;
+      const callComplete = !!row.querySelector('.list-cb-callComplete')?.checked;
+      
+      if (locked && item) {
+        refundDone = !!item.refundDone;
+        exchangeDone = !!item.exchangeDone;
+        invalidInfo = !!item.invalidInfo;
+      }
+      
+      const oldValues = {
+        refundDone: item?.refundDone || false,
+        exchangeDone: item?.exchangeDone || false,
+        invalidInfo: item?.invalidInfo || false,
+        sixCansOrMore: item?.sixCansOrMore || false,
+        callComplete: item?.callComplete || false
+      };
+      
+      const newValues = { refundDone, exchangeDone, invalidInfo, sixCansOrMore, callComplete };
+      const changes = [];
+      if (oldValues.refundDone !== newValues.refundDone) changes.push('환불: ' + (newValues.refundDone ? '체크' : '해제'));
+      if (oldValues.exchangeDone !== newValues.exchangeDone) changes.push('교환: ' + (newValues.exchangeDone ? '체크' : '해제'));
+      if (oldValues.invalidInfo !== newValues.invalidInfo) changes.push('잘못된정보: ' + (newValues.invalidInfo ? '체크' : '해제'));
+      if (oldValues.sixCansOrMore !== newValues.sixCansOrMore) changes.push('6캔이상: ' + (newValues.sixCansOrMore ? '체크' : '해제'));
+      if (oldValues.callComplete !== newValues.callComplete) changes.push('유선안내완료: ' + (newValues.callComplete ? '체크' : '해제'));
+      
+      const payload = { refundDone, exchangeDone, invalidInfo, sixCansOrMore, callComplete };
+      const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
+      const metaPath = prefix + '/submissions_meta/' + dateKey + '/' + id;
+      
+      // TODO: 확정 후 주석 해제 필요 - Firebase 저장 기능
+      /*
+      try {
+        await update(dbRef(db, subPath), payload);
+        await update(dbRef(db, metaPath), payload);
+        
+        if (changes.length > 0) {
+          await addProcessingHistory(id, dateKey, prefix, changes.join(', '));
+        }
+        
+        const it = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
+        if (it) {
+          it.refundDone = refundDone;
+          it.exchangeDone = exchangeDone;
+          it.invalidInfo = invalidInfo;
+          it.sixCansOrMore = sixCansOrMore;
+          it.callComplete = callComplete;
+        }
+        renderTable();
+      } catch (err) {
+        console.error('저장 오류:', err);
+        alert('저장 실패: ' + (err.message || err));
+      }
+      */
+      
+      // 목업: 로컬 상태만 업데이트 (Firebase 저장 없음, 화면 새로고침 없음)
+      console.log('[목업] 저장:', { id, dateKey, prefix, payload, changes });
+      if (changes.length > 0) {
+        await addProcessingHistory(id, dateKey, prefix, changes.join(', '));
+      }
+      const it = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
+      if (it) {
+        it.refundDone = refundDone;
+        it.exchangeDone = exchangeDone;
+        it.invalidInfo = invalidInfo;
+        it.sixCansOrMore = sixCansOrMore;
+        it.callComplete = callComplete;
+      }
+      // 목업 모드에서는 화면 새로고침 없이 체크박스 상태만 유지됨
+      // renderTable() 호출 제거
+    }
+
+    function attachPhotoViewButtons() {
+      listEl.querySelectorAll('.photo-view-btn').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const row = btn.closest('tr');
+          if (!row) return;
+          const id = row.getAttribute('data-id');
+          const dateKey = row.getAttribute('data-date-key') || '';
+          const prefix = row.getAttribute('data-prefix') || '';
+          const isLegacy = !dateKey;
+          const url = 'photo_view.html?id=' + encodeURIComponent(id) + 
+                     (dateKey ? '&dateKey=' + encodeURIComponent(dateKey) : '') +
+                     (isLegacy ? '&legacy=1' : '') +
+                     '&prefix=' + encodeURIComponent(prefix);
+          window.open(url, '_blank', 'width=1400,height=900,scrollbars=yes');
+        });
+      });
+    }
+
+    function attachDetailViewButtons() {
+      listEl.querySelectorAll('.detail-view-btn').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const row = btn.closest('tr');
+          if (!row) return;
+          const id = row.getAttribute('data-id');
+          const dateKey = row.getAttribute('data-date-key') || '';
+          const prefix = row.getAttribute('data-prefix') || '';
+          const d = allItems.find((it) => String(it.id) === String(id) && (it._dateKey || '') === dateKey && it._prefix === prefix);
+          if (d) {
+            openCounselingModal(d);
+          }
+        });
+      });
+    }
+
+    async function openCounselingModal(d) {
+      if (!d) return;
+      const modal = document.getElementById('counselingModal');
+      const titleEl = document.getElementById('counselingModalTitle');
+      const customerInfoEl = document.getElementById('counselingModalCustomerInfo');
+      const historyListEl = document.getElementById('counselingModalHistoryList');
+      const textareaEl = document.getElementById('counselingModalTextarea');
+      
+      titleEl.textContent = '상담이력 입력 — ' + (d.name || d.contact || d.id || '');
+      customerInfoEl.innerHTML = 
+        '<strong>이름:</strong> ' + escapeHtml(d.name || '-') + ' | ' +
+        '<strong>연락처:</strong> ' + escapeHtml(d.contact || '-') + ' | ' +
+        '<strong>접수ID:</strong> ' + escapeHtml(d.id || '-');
+      
+      // 기존 상담이력 로드 및 표시
+      await refreshCounselingHistoryList(d.id, d._dateKey || '', d._prefix || '');
+      
+      // 새 입력은 빈 텍스트 영역
+      textareaEl.value = '';
+      
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden', 'false');
+      textareaEl.focus();
+      
+      attachCounselingModalListeners(d);
+    }
+
+    async function refreshCounselingHistoryList(id, dateKey, prefix) {
+      const historyListEl = document.getElementById('counselingModalHistoryList');
+      const history = await loadCounselingHistory(id, dateKey, prefix);
+      
+      if (history.length === 0) {
+        historyListEl.innerHTML = '';
+        return;
+      }
+      
+      let historyHtml = '<div style="padding: 12px; background: #f9f9f9; border-radius: 6px; max-height: 200px; overflow-y: auto;">';
+      historyHtml += '<h4 style="margin: 0 0 8px 0; font-size: 13px; color: #333;">기존 상담이력 (' + history.length + '건)</h4>';
+      history.forEach((h, idx) => {
+        historyHtml += '<div style="margin-bottom: 8px; padding: 8px; background: #fff; border-radius: 4px; border-left: 3px solid #2b3c90;">';
+        historyHtml += '<div style="font-size: 11px; color: #666; margin-bottom: 4px;">';
+        historyHtml += '<strong>' + formatDate(h.timestamp) + '</strong> - ' + escapeHtml(h.account);
+        historyHtml += '</div>';
+        historyHtml += '<div style="font-size: 13px; color: #333; white-space: pre-wrap;">' + escapeHtml(h.content) + '</div>';
+        historyHtml += '</div>';
+      });
+      historyHtml += '</div>';
+      historyListEl.innerHTML = historyHtml;
+    }
+
+    function closeCounselingModal() {
+      const modal = document.getElementById('counselingModal');
+      modal.classList.remove('show');
+      modal.setAttribute('aria-hidden', 'true');
+    }
+
+    function attachCounselingModalListeners(d) {
+      const closeBtn = document.getElementById('counselingModalClose');
+      const cancelBtn = document.getElementById('counselingModalCancelBtn');
+      const saveBtn = document.getElementById('counselingModalSaveBtn');
+      const modal = document.getElementById('counselingModal');
+      const textareaEl = document.getElementById('counselingModalTextarea');
+      
+      // 기존 리스너 제거 (중복 방지)
+      const newCloseBtn = closeBtn.cloneNode(true);
+      closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+      const newCancelBtn = cancelBtn.cloneNode(true);
+      cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+      const newSaveBtn = saveBtn.cloneNode(true);
+      saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
+      
+      document.getElementById('counselingModalClose').addEventListener('click', closeCounselingModal);
+      document.getElementById('counselingModalCancelBtn').addEventListener('click', closeCounselingModal);
+      document.getElementById('counselingModalSaveBtn').addEventListener('click', async () => {
+        const counselingContent = textareaEl.value || '';
+        if (!counselingContent.trim()) {
+          alert('상담이력을 입력해주세요.');
+          return;
+        }
+        const id = d.id;
+        const dateKey = (d._dateKey || '').trim();
+        const isLegacy = !!d._isLegacy;
+        const prefix = (d._prefix || '').trim();
+        if (!id || !prefix) return;
+        if (!isLegacy && !dateKey) return;
+        
+        // TODO: 확정 후 주석 해제 필요 - Firebase 저장 기능
+        /*
+        const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
+        const metaPath = dateKey ? (prefix + '/submissions_meta/' + dateKey + '/' + id) : '';
+        try {
+          // 상담이력 배열로 저장
+          const existingHistory = await loadCounselingHistory(id, dateKey, prefix);
+          const newHistoryItem = {
+            account: currentUserEmail,
+            timestamp: Date.now(),
+            content: counselingContent.trim()
+          };
+          const updatedHistory = [...existingHistory, newHistoryItem];
+          await update(dbRef(db, subPath), { counselingHistory: updatedHistory });
+          if (metaPath) await update(dbRef(db, metaPath), { counselingHistory: updatedHistory });
+          await addProcessingHistory(id, dateKey, prefix, '상담이력 기재');
+          alert('상담이력이 저장되었습니다.');
+          closeCounselingModal();
+          renderTable();
+        } catch (err) {
+          console.error('저장 오류:', err);
+          alert('저장 실패: ' + (err.message || err));
+        }
+        */
+        
+        // 목업: 로컬 메모리에 상담이력 추가
+        await addCounselingHistory(id, dateKey, prefix, counselingContent);
+        await addProcessingHistory(id, dateKey, prefix, '상담이력 기재');
+        
+        // 텍스트 영역 초기화하고 기존 이력 목록 새로고침
+        textareaEl.value = '';
+        await refreshCounselingHistoryList(id, dateKey, prefix);
+        textareaEl.focus();
+      });
+      
+      // 모달 배경 클릭 시 닫기
+      if (modal) {
+        const handleBackgroundClick = (e) => {
+          if (e.target === modal) {
+            closeCounselingModal();
+          }
+        };
+        modal.removeEventListener('click', handleBackgroundClick);
+        modal.addEventListener('click', handleBackgroundClick);
+      }
+    }
+
+    function attachHistoryViewButtons() {
+      listEl.querySelectorAll('.history-view-btn').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          const row = btn.closest('tr');
+          if (!row) return;
+          const id = row.getAttribute('data-id');
+          const dateKey = row.getAttribute('data-date-key') || '';
+          const prefix = row.getAttribute('data-prefix') || '';
+          const d = allItems.find((it) => String(it.id) === String(id) && (it._dateKey || '') === dateKey && it._prefix === prefix);
+          if (!d) return;
+          
+          const processingHistory = await loadProcessingHistory(id, dateKey, prefix);
+          const counselingHistory = await loadCounselingHistory(id, dateKey, prefix);
+          
+          if (processingHistory.length === 0 && counselingHistory.length === 0) {
+            alert('처리내역이 없습니다.');
+            return;
+          }
+          
+          let historyText = '처리내역\n';
+          historyText += '고객: ' + (d.name || '-') + ' / ' + (d.contact || '-') + '\n';
+          historyText += '접수ID: ' + (d.id || '-') + '\n';
+          historyText += '='.repeat(50) + '\n\n';
+          
+          if (processingHistory.length > 0) {
+            historyText += '【상태 변경 내역】\n';
+            processingHistory.forEach((h, idx) => {
+              historyText += `${idx + 1}. ${formatDate(h.timestamp)}\n`;
+              historyText += `   처리자: ${h.account}\n`;
+              historyText += `   변경내용: ${h.changes}\n\n`;
+            });
+          }
+          
+          if (counselingHistory.length > 0) {
+            historyText += '【상담이력】\n';
+            counselingHistory.forEach((h, idx) => {
+              historyText += `${idx + 1}. ${formatDate(h.timestamp)}\n`;
+              historyText += `   처리자: ${h.account}\n`;
+              historyText += `   내용: ${h.content}\n\n`;
+            });
+          }
+          
+          // 모달로 표시 (alert 대신)
+          showHistoryModal(historyText, d);
+        });
+      });
+    }
+
+    function showHistoryModal(historyText, d) {
+      // 간단한 모달로 처리내역 표시
+      const modal = document.createElement('div');
+      modal.style.cssText = 'position: fixed; inset: 0; z-index: 10002; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; padding: 20px;';
+      modal.innerHTML = `
+        <div style="background: #fff; border-radius: 12px; max-width: 700px; width: 100%; max-height: 80vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.25);">
+          <div style="padding: 16px 20px; background: #1a1a1a; color: #fff; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 16px;">처리내역 — ${escapeHtml(d.name || d.contact || d.id || '')}</span>
+            <button id="historyModalClose" style="padding: 6px 12px; background: #444; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">닫기</button>
+          </div>
+          <div style="padding: 20px; overflow-y: auto; flex: 1;">
+            <pre style="white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 13px; line-height: 1.6; margin: 0;">${escapeHtml(historyText)}</pre>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      
+      const closeBtn = modal.querySelector('#historyModalClose');
+      const closeModal = () => {
+        document.body.removeChild(modal);
+      };
+      closeBtn.addEventListener('click', closeModal);
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+      });
+    }
+
+    function getPhotoListFromData(d, singleKey, listKey) {
+      if (!d) return [];
+      if (Array.isArray(d[listKey])) return d[listKey];
+      const single = d[singleKey];
+      return single ? [single] : [];
+    }
+
+    async function openDetailModal(d) {
+      if (!d || !db) return;
+      currentDetailData = d;
+      const modal = document.getElementById('detailModal');
+      const titleEl = document.getElementById('detailModalTitle');
+      const infoRowsEl = document.getElementById('detailModalInfoRows');
+      const flagsEl = document.getElementById('detailModalFlags');
+      titleEl.textContent = '고객 상세 · 사진 보기 — ' + (d.name || d.contact || d.id || '');
+      infoRowsEl.innerHTML =
+        '<div class="info-row"><strong>이름</strong> ' + escapeHtml(d.name || '-') + '</div>' +
+        '<div class="info-row"><strong>연락처</strong> ' + escapeHtml(d.contact || '-') + '</div>' +
+        '<div class="info-row"><strong>주소</strong> ' + escapeHtml(d.address || '-') + '</div>' +
+        '<div class="info-row"><strong>상세주소</strong> ' + escapeHtml(d.addressDetail || '-') + '</div>' +
+        '<div class="info-row"><strong>개인통관부호</strong> ' + escapeHtml(d.customsCode || '-') + '</div>' +
+        '<div class="info-row"><strong>접수ID</strong> ' + escapeHtml(d.id || '-') + '</div>' +
+        '<div class="info-row"><strong>접수일시</strong> ' + formatDate(d.createdAt) + '</div>';
+      
+      const rC = d.refundDone ? ' checked' : '';
+      const eC = d.exchangeDone ? ' checked' : '';
+      const iC = d.invalidInfo ? ' checked' : '';
+      const sC = d.sixCansOrMore ? ' checked' : '';
+      const callC = d.callComplete ? ' checked' : '';
+      const dmLocked = !!(d.refundComplete || d.exchangeComplete);
+      const dmLockedAttr = dmLocked ? ' disabled title="처리 완료 건 — 수정 불가"' : '';
+      
+      const history = await loadProcessingHistory(d.id, d._dateKey || '', d._prefix || '');
+      let historyHtml = '';
+      if (history.length > 0) {
+        historyHtml = '<div class="processing-history"><h4>처리내역</h4>';
+        history.forEach((h) => {
+          historyHtml += '<div class="processing-history-item">';
+          historyHtml += '<strong>' + formatDate(h.timestamp) + '</strong> - ' + escapeHtml(h.account) + '<br>';
+          historyHtml += escapeHtml(h.changes);
+          historyHtml += '</div>';
+        });
+        historyHtml += '</div>';
+      }
+      
+      flagsEl.innerHTML =
+        '<h3>상태 체크</h3>' +
+        (dmLocked ? '<p style="font-size:12px;color:#856404;margin-bottom:8px;">※ 환불완료/교환완료 건 — 환불·교환·잘못된정보는 수정 불가</p>' : '') +
+        '<label><input type="checkbox" id="dm-cb-refund" data-field="refundDone"' + rC + dmLockedAttr + '> 환불</label>' +
+        '<label><input type="checkbox" id="dm-cb-exchange" data-field="exchangeDone"' + eC + dmLockedAttr + '> 교환</label>' +
+        '<label><input type="checkbox" id="dm-cb-invalid" data-field="invalidInfo"' + iC + dmLockedAttr + '> 잘못된정보</label>' +
+        '<label><input type="checkbox" id="dm-cb-sixCans" data-field="sixCansOrMore"' + sC + '> 6캔이상</label>' +
+        '<label><input type="checkbox" id="dm-cb-callComplete" data-field="callComplete"' + callC + '> 유선안내완료</label>' +
+        '<h3 style="margin-top: 16px;">상담이력</h3>' +
+        '<textarea id="dm-counseling-history" placeholder="상담이력을 입력하세요.">' + escapeHtml(d.counselingHistory || '') + '</textarea>' +
+        '<button type="button" class="btn btn-primary" id="dm-save-history-btn" style="width: auto; margin-top: 8px;">상담이력 저장</button>' +
+        '<p style="font-size:12px;margin-top:8px;color:#555;">환불완료 ' + (d.refundComplete ? 'Y' : '-') + ' / 교환완료 ' + (d.exchangeComplete ? 'Y' : '-') + ' / 증빙오류(반려) ' + (d.proofError ? 'Y' : '-') + (d.proofErrorReason ? ' — ' + escapeHtml(d.proofErrorReason) : '') + '</p>' +
+        historyHtml;
+      
+      document.getElementById('detailModalPhotos').textContent = '사진 불러오는 중…';
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden', 'false');
+      loadDetailModalPhotos(d);
+      attachDetailModalCheckboxListeners();
+    }
+
+    function closeDetailModal() {
+      const modal = document.getElementById('detailModal');
+      modal.classList.remove('show');
+      modal.setAttribute('aria-hidden', 'true');
+      currentDetailData = null;
+    }
+
+    function loadDetailModalPhotos(d) {
+      const prefix = d._prefix || '';
+      const dateKey = d._dateKey || '';
+      const id = d.id;
+      const isLegacy = !!d._isLegacy;
+      const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
+      const container = document.getElementById('detailModalPhotos');
+      get(child(dbRef(db), subPath)).then(snap => {
+        if (!snap.exists()) {
+          container.innerHTML = '<p class="no-image">해당 접수 데이터가 없습니다.</p>';
+          return;
+        }
+        const data = snap.val();
+        const p1List = getPhotoListFromData(data, 'photo1', 'photo1List');
+        const p2List = getPhotoListFromData(data, 'photo2', 'photo2List');
+        const p3List = getPhotoListFromData(data, 'photo3', 'photo3List');
+        let html = '<div class="detail-modal-photo-box"><h3>1. 구매 시 영수증</h3><div class="caption">업로드된 사진</div>';
+        if (p1List.length) p1List.forEach((url) => { html += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="영수증">'; });
+        else html += '<div class="no-image">없음</div>';
+        html += '</div><div class="detail-modal-photo-box"><h3>2. 제품 앞면</h3><div class="caption">업로드된 사진</div>';
+        if (p2List.length) p2List.forEach((url) => { html += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="제품 앞면">'; });
+        else html += '<div class="no-image">없음</div>';
+        html += '</div><div class="detail-modal-photo-box"><h3>3. 제품 뒷면/바닥면</h3><div class="caption">업로드된 사진</div>';
+        if (p3List.length) p3List.forEach((url) => { html += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="제품 뒷면">'; });
+        else html += '<div class="no-image">없음</div>';
+        html += '</div>';
+        container.innerHTML = html;
+      }).catch(() => { container.innerHTML = '<p class="no-image">사진을 불러올 수 없습니다.</p>'; });
+    }
+
+    function attachDetailModalCheckboxListeners() {
+      const flagsEl = document.getElementById('detailModalFlags');
+      if (!flagsEl) return;
+      const cbRefund = document.getElementById('dm-cb-refund');
+      const cbExchange = document.getElementById('dm-cb-exchange');
+      const cbInvalid = document.getElementById('dm-cb-invalid');
+      const cbSix = document.getElementById('dm-cb-sixCans');
+      const cbCallComplete = document.getElementById('dm-cb-callComplete');
+      const saveHistoryBtn = document.getElementById('dm-save-history-btn');
+      
+      const saveFromModal = async () => {
+        const refundDone = !!cbRefund?.checked;
+        const exchangeDone = !!cbExchange?.checked;
+        const invalidInfo = !!cbInvalid?.checked;
+        const sixCansOrMore = !!cbSix?.checked;
+        const callComplete = !!cbCallComplete?.checked;
+        
+        const d = currentDetailData;
+        if (!d || !db) return;
+        const id = d.id;
+        const dateKey = (d._dateKey || '').trim();
+        const isLegacy = !!d._isLegacy;
+        const prefix = (d._prefix || '').trim();
+        if (!id || !prefix) return;
+        if (!isLegacy && !dateKey) return;
+        
+        const oldValues = {
+          refundDone: d.refundDone || false,
+          exchangeDone: d.exchangeDone || false,
+          invalidInfo: d.invalidInfo || false,
+          sixCansOrMore: d.sixCansOrMore || false,
+          callComplete: d.callComplete || false
+        };
+        
+        const newValues = { refundDone, exchangeDone, invalidInfo, sixCansOrMore, callComplete };
+        const changes = [];
+        if (oldValues.refundDone !== newValues.refundDone) changes.push('환불: ' + (newValues.refundDone ? '체크' : '해제'));
+        if (oldValues.exchangeDone !== newValues.exchangeDone) changes.push('교환: ' + (newValues.exchangeDone ? '체크' : '해제'));
+        if (oldValues.invalidInfo !== newValues.invalidInfo) changes.push('잘못된정보: ' + (newValues.invalidInfo ? '체크' : '해제'));
+        if (oldValues.sixCansOrMore !== newValues.sixCansOrMore) changes.push('6캔이상: ' + (newValues.sixCansOrMore ? '체크' : '해제'));
+        if (oldValues.callComplete !== newValues.callComplete) changes.push('유선안내완료: ' + (newValues.callComplete ? '체크' : '해제'));
+        
+        const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
+        const metaPath = dateKey ? (prefix + '/submissions_meta/' + dateKey + '/' + id) : '';
+        
+        const locked = !!(d.refundComplete || d.exchangeComplete);
+        if (locked) {
+          newValues.refundDone = oldValues.refundDone;
+          newValues.exchangeDone = oldValues.exchangeDone;
+          newValues.invalidInfo = oldValues.invalidInfo;
+        }
+        
+        // TODO: 확정 후 주석 해제 필요 - Firebase 저장 기능
+        /*
+        try {
+          await update(dbRef(db, subPath), newValues);
+          if (metaPath) await update(dbRef(db, metaPath), newValues);
+          
+          if (changes.length > 0) {
+            await addProcessingHistory(id, dateKey, prefix, changes.join(', '));
+          }
+          
+          const it = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
+          if (it) {
+            it.refundDone = newValues.refundDone;
+            it.exchangeDone = newValues.exchangeDone;
+            it.invalidInfo = newValues.invalidInfo;
+            it.sixCansOrMore = newValues.sixCansOrMore;
+            it.callComplete = newValues.callComplete;
+          }
+          
+          alert('저장되었습니다.');
+          closeDetailModal();
+          renderTable();
+        } catch (err) {
+          console.error('저장 오류:', err);
+          alert('저장 실패: ' + (err.message || err));
+        }
+        */
+        
+        // 목업: 로컬 상태만 업데이트 (Firebase 저장 없음, 화면 새로고침 없음)
+        console.log('[목업] 모달에서 저장:', { id, dateKey, prefix, newValues, changes });
+        if (changes.length > 0) {
+          await addProcessingHistory(id, dateKey, prefix, changes.join(', '));
+        }
+        const it = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
+        if (it) {
+          it.refundDone = newValues.refundDone;
+          it.exchangeDone = newValues.exchangeDone;
+          it.invalidInfo = newValues.invalidInfo;
+          it.sixCansOrMore = newValues.sixCansOrMore;
+          it.callComplete = newValues.callComplete;
+        }
+        // 목업 모드에서는 모달 닫지 않고 체크박스 상태만 유지됨
+        // closeDetailModal() 및 renderTable() 호출 제거
+      };
+      
+      [cbRefund, cbExchange, cbInvalid, cbSix, cbCallComplete].forEach(cb => {
+        if (!cb) return;
+        cb.addEventListener('change', saveFromModal);
+      });
+      
+      if (saveHistoryBtn) {
+        saveHistoryBtn.addEventListener('click', async () => {
+          const counselingHistory = document.getElementById('dm-counseling-history')?.value || '';
+          const d = currentDetailData;
+          if (!d || !db) return;
+          const id = d.id;
+          const dateKey = (d._dateKey || '').trim();
+          const isLegacy = !!d._isLegacy;
+          const prefix = (d._prefix || '').trim();
+          if (!id || !prefix) return;
+          if (!isLegacy && !dateKey) return;
+          
+          const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
+          const metaPath = dateKey ? (prefix + '/submissions_meta/' + dateKey + '/' + id) : '';
+          
+          // TODO: 확정 후 주석 해제 필요 - Firebase 저장 기능
+          /*
+          try {
+            await update(dbRef(db, subPath), { counselingHistory });
+            if (metaPath) await update(dbRef(db, metaPath), { counselingHistory });
+            
+            await addProcessingHistory(id, dateKey, prefix, '상담이력 기재: ' + (counselingHistory || '(내용 없음)'));
+            
+            const it = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
+            if (it) {
+              it.counselingHistory = counselingHistory;
+            }
+            
+            alert('상담이력이 저장되었습니다.');
+            closeDetailModal();
+            renderTable();
+          } catch (err) {
+            console.error('저장 오류:', err);
+            alert('저장 실패: ' + (err.message || err));
+          }
+          */
+          
+          // 목업: 로컬 상태만 업데이트 (Firebase 저장 없음, 화면 새로고침 없음)
+          console.log('[목업] 상담이력 저장:', { id, dateKey, prefix, counselingHistory });
+          await addProcessingHistory(id, dateKey, prefix, '상담이력 기재: ' + (counselingHistory || '(내용 없음)'));
+          const it = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
+          if (it) {
+            it.counselingHistory = counselingHistory;
+          }
+          // 목업 모드에서는 모달 닫지 않고 텍스트 영역 내용만 유지됨
+          // closeDetailModal() 및 renderTable() 호출 제거
+        });
+      }
+    }
+
+    (function initDetailModalClose() {
+      const modal = document.getElementById('detailModal');
+      const closeBtn = document.getElementById('detailModalClose');
+      if (closeBtn) closeBtn.addEventListener('click', closeDetailModal);
+      if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) closeDetailModal(); });
+    })();
+  </script>
+</body>
+</html>

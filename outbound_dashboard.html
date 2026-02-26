@@ -1,0 +1,1377 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>아웃바운드 모니터링 대시보드</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .dashboard-wrap { max-width: 1400px; margin: 0 auto; padding: 20px; }
+    .dashboard-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+    .dashboard-header h1 { margin: 0; font-size: 20px; }
+    .back-link { color: #0066cc; text-decoration: none; font-weight: 600; }
+    .back-link:hover { text-decoration: underline; }
+    .dashboard-section { margin-bottom: 24px; }
+    .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }
+    .dashboard-card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .dashboard-card h3 { margin: 0 0 12px 0; font-size: 16px; color: #333; }
+    .dashboard-card .hint { font-size: 12px; color: #666; margin-bottom: 12px; }
+    .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .toolbar label { font-size: 13px; color: #555; }
+    .toolbar select, .toolbar input { padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+    .toolbar button { padding: 8px 16px; background: #17a; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .toolbar button:hover { background: #158; }
+    .toolbar button:disabled { background: #999; cursor: not-allowed; }
+    .stats-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 12px; }
+    .stats-table th, .stats-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+    .stats-table th { background: #f5f5f5; font-weight: 600; }
+    .stats-table tr:hover { background: #f9f9f9; }
+    .stats-table .text-left { text-align: left; }
+    .stats-table .number { font-weight: 600; color: #333; }
+    .distribution-section { margin-top: 24px; }
+    .distribution-card {
+      background: #f9f9f9;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .distribution-card h4 { margin: 0 0 12px 0; font-size: 14px; color: #333; }
+    .distribution-list { max-height: 300px; overflow-y: auto; }
+    .distribution-item {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 10px;
+      margin-bottom: 8px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .distribution-item-info { flex: 1; }
+    .distribution-item-info strong { display: block; margin-bottom: 4px; }
+    .distribution-item-info span { font-size: 11px; color: #666; }
+    .distribution-item-actions { display: flex; gap: 8px; }
+    .distribution-item-actions button {
+      padding: 4px 12px;
+      font-size: 11px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .btn-assign { background: #28a745; color: #fff; }
+    .btn-assign:hover { background: #218838; }
+    .btn-reassign { background: #ffc107; color: #333; }
+    .btn-reassign:hover { background: #e0a800; }
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(0,0,0,0.6);
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal-box {
+      background: #fff;
+      border-radius: 12px;
+      max-width: 600px;
+      width: 100%;
+      max-height: 80vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .modal-header {
+      padding: 16px 20px;
+      background: #1a1a1a;
+      color: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header h3 { margin: 0; font-size: 16px; }
+    .modal-close {
+      padding: 6px 12px;
+      background: #444;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .modal-close:hover { background: #555; }
+    .modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .modal-body label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+    }
+    .modal-body select {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid #eee;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .msg { padding: 12px; border-radius: 6px; margin-bottom: 12px; font-size: 13px; }
+    .msg.info { background: #e7f3ff; color: #004; }
+    .msg.error { background: #ffe0e0; color: #800; }
+    .msg.success { background: #d4edda; color: #155724; }
+    .loading { padding: 20px; text-align: center; color: #666; }
+    .login-lock {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: #f5f5f5;
+      padding: 20px;
+    }
+    .login-box {
+      background: #fff;
+      border-radius: 12px;
+      padding: 32px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+      max-width: 400px;
+      width: 100%;
+    }
+    .login-box h2 {
+      margin: 0 0 24px 0;
+      font-size: 20px;
+      text-align: center;
+      color: #333;
+    }
+    .login-box input {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      margin-bottom: 12px;
+      box-sizing: border-box;
+    }
+    .login-box button {
+      width: 100%;
+      padding: 12px;
+      background: #17a;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .login-box button:hover {
+      background: #158;
+    }
+    .login-box .error {
+      color: #dc3545;
+      font-size: 13px;
+      margin-top: 8px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <!-- 로그인 화면 -->
+  <div id="loginLock" class="login-lock" style="display: none;">
+    <div class="login-box">
+      <h2>아웃바운드 모니터링 대시보드</h2>
+      <input type="email" id="loginEmail" placeholder="이메일" autocomplete="email">
+      <input type="password" id="loginPassword" placeholder="비밀번호" autocomplete="current-password">
+      <button type="button" id="loginBtn">로그인</button>
+      <div id="loginError" class="error"></div>
+    </div>
+  </div>
+
+  <!-- 대시보드 화면 -->
+  <div id="dashboardView" class="dashboard-wrap" style="display: none;">
+    <div class="dashboard-header">
+      <h1>아웃바운드 모니터링 대시보드</h1>
+      <div style="display: flex; gap: 12px; align-items: center;">
+        <span id="adminUserEmail" style="font-size: 12px; color: #666;"></span>
+        <a href="outbound.html" class="back-link">← 아웃바운드 목록으로</a>
+        <button type="button" class="toolbar button" id="adminLogoutBtn" style="background: #666; color: #fff; font-size: 12px;">로그아웃</button>
+      </div>
+    </div>
+
+    <!-- 상담사별 실적 통계 및 분배 이력 -->
+    <div class="dashboard-section">
+      <div class="dashboard-card">
+        <h3>상담사별 실적 통계 및 분배 이력</h3>
+        <p class="hint">날짜별, 상담사별로 분배된 접수건과 처리 완료 현황을 직관적으로 조회합니다. 상담사별 분배건수, 유선안내완료건수, 상담이력 작성 건수, 처리율을 확인할 수 있습니다.</p>
+        <div class="toolbar">
+          <label>기간:</label>
+          <input type="date" id="statsStartDate" value="">
+          <span>~</span>
+          <input type="date" id="statsEndDate" value="">
+          <button type="button" id="loadStatsBtn">통계 조회</button>
+          <button type="button" id="downloadStatsBtn" style="background: #28a745; display: none;">CSV 다운로드</button>
+        </div>
+        <div id="statsLoading" class="loading" style="display: none;">통계 조회 중…</div>
+        <div id="statsResult"></div>
+      </div>
+    </div>
+
+    <!-- 아웃바운드 물량 분배 -->
+    <div class="dashboard-section distribution-section">
+      <div class="dashboard-card">
+        <h3>아웃바운드 물량 분배</h3>
+        <p class="hint">현재 기준으로 접수건을 조회하고 상담사별로 분배할 수 있습니다. 기량이 떨어지는 상담사의 물량을 잘하는 상담사에게 재분배할 수 있습니다.</p>
+        <div class="toolbar">
+          <label>분배 대상:</label>
+          <select id="distributionFilterSelect">
+            <option value="noCheck">환불/교환 미체크</option>
+            <option value="proofError">증빙오류(반려)</option>
+          </select>
+          <button type="button" id="loadDistributionBtn">전체 조회</button>
+          <button type="button" id="autoDistributeBtn" style="background: #ffc107; color: #333;">자동 균등 분배</button>
+          <button type="button" id="selectiveDistributeBtn" style="background: #17a; color: #fff;">선택 분배</button>
+        </div>
+        <div id="distributionLoading" class="loading" style="display: none;">접수건 조회 중…</div>
+        <div id="distributionResult"></div>
+      </div>
+    </div>
+
+    <!-- 상담사별 잔여건 및 이관 -->
+    <div class="dashboard-section">
+      <div class="dashboard-card">
+        <h3>상담사별 잔여건 및 이관</h3>
+        <p class="hint">각 상담사에게 분배된 미처리 건을 확인하고, 실적이 떨어지는 상담사의 잔여건을 다른 상담사에게 이관할 수 있습니다.</p>
+        <div class="toolbar">
+          <button type="button" id="loadRemainingBtn">잔여건 조회</button>
+        </div>
+        <div id="remainingLoading" class="loading" style="display: none;">잔여건 조회 중…</div>
+        <div id="remainingResult"></div>
+      </div>
+    </div>
+
+    <!-- 분배 이력 (상세 통계) -->
+    <div class="dashboard-section">
+      <div class="dashboard-card">
+        <h3>분배 이력 및 상세 통계</h3>
+        <p class="hint">날짜별, 상담사별로 분배된 접수건과 처리 완료 현황을 직관적으로 조회합니다.</p>
+        <div class="toolbar">
+          <label>기간:</label>
+          <input type="date" id="historyStartDate" value="">
+          <span>~</span>
+          <input type="date" id="historyEndDate" value="">
+          <label style="margin-left: 12px;">상담사:</label>
+          <select id="historyAccountSelect">
+            <option value="">전체</option>
+            <option value="cs1@ubase.co.kr">cs1@ubase.co.kr</option>
+            <option value="cs2@ubase.co.kr">cs2@ubase.co.kr</option>
+            <option value="cs3@ubase.co.kr">cs3@ubase.co.kr</option>
+            <option value="cs4@ubase.co.kr">cs4@ubase.co.kr</option>
+            <option value="cs5@ubase.co.kr">cs5@ubase.co.kr</option>
+            <option value="cs6@ubase.co.kr">cs6@ubase.co.kr</option>
+            <option value="cs7@ubase.co.kr">cs7@ubase.co.kr</option>
+            <option value="cs8@ubase.co.kr">cs8@ubase.co.kr</option>
+            <option value="cs9@ubase.co.kr">cs9@ubase.co.kr</option>
+            <option value="cs10@ubase.co.kr">cs10@ubase.co.kr</option>
+          </select>
+          <button type="button" id="loadHistoryBtn">이력 조회</button>
+        </div>
+        <div id="historyLoading" class="loading" style="display: none;">이력 조회 중…</div>
+        <div id="historyResult"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 분배 모달 -->
+  <div id="assignModal" class="modal-overlay" aria-hidden="true">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>접수건 분배</h3>
+        <button type="button" class="modal-close" id="assignModalClose">닫기</button>
+      </div>
+      <div class="modal-body">
+        <div id="assignModalInfo"></div>
+        <label>상담사 선택:</label>
+        <select id="assignAccountSelect">
+          <option value="">선택하세요</option>
+          <option value="cs1@ubase.co.kr">cs1@ubase.co.kr</option>
+          <option value="cs2@ubase.co.kr">cs2@ubase.co.kr</option>
+          <option value="cs3@ubase.co.kr">cs3@ubase.co.kr</option>
+          <option value="cs4@ubase.co.kr">cs4@ubase.co.kr</option>
+          <option value="cs5@ubase.co.kr">cs5@ubase.co.kr</option>
+          <option value="cs6@ubase.co.kr">cs6@ubase.co.kr</option>
+          <option value="cs7@ubase.co.kr">cs7@ubase.co.kr</option>
+          <option value="cs8@ubase.co.kr">cs8@ubase.co.kr</option>
+          <option value="cs9@ubase.co.kr">cs9@ubase.co.kr</option>
+          <option value="cs10@ubase.co.kr">cs10@ubase.co.kr</option>
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="toolbar button" id="assignModalCancelBtn" style="background: #777; color: #fff;">취소</button>
+        <button type="button" class="toolbar button" id="assignModalConfirmBtn" style="background: #28a745; color: #fff;">분배</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+    import {
+      getDatabase,
+      ref as dbRef,
+      get
+    } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+    import {
+      getAuth,
+      onAuthStateChanged,
+      signOut,
+      signInWithEmailAndPassword
+    } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-auth.js";
+
+    // 아웃바운드 대시보드 접근 권한: 관리자 계정만
+    const ALLOWED_EMAILS = ['csadmin@ubase.co.kr'];
+    
+    // 상담원 계정 목록 (분배용)
+    const CS_ACCOUNTS = [];
+    for (let i = 1; i <= 10; i++) {
+      CS_ACCOUNTS.push(`cs${i}@ubase.co.kr`);
+    }
+
+    const PREFIXES = ['nutricia-x9fQ2kM7-1', 'nutricia-aL4pZ8Tq-2', 'nutricia-nu7VnCwR3H-3', 'nutricia-MK2rP9dS-4'];
+    const PROJECT_LABELS = ['아이베', '림인터네셔널', '크린랩', '몰테일'];
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCxNwnAzMn0JUkHGDXgY4taTPJYeABDohg",
+      authDomain: "eibe-nutricia.firebaseapp.com",
+      databaseURL: "https://eibe-nutricia-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "eibe-nutricia",
+      storageBucket: "eibe-nutricia.firebasestorage.app",
+      messagingSenderId: "605906618980",
+      appId: "1:605906618980:web:d947540696a573c4856d71"
+    };
+
+    let app, db, auth;
+    try {
+      app = initializeApp(firebaseConfig);
+      db = getDatabase(app);
+      auth = getAuth(app);
+    } catch (err) {
+      console.error('Firebase 초기화 오류:', err);
+    }
+
+    const adminUserEmailEl = document.getElementById('adminUserEmail');
+    const adminLogoutBtn = document.getElementById('adminLogoutBtn');
+    const statsStartDate = document.getElementById('statsStartDate');
+    const statsEndDate = document.getElementById('statsEndDate');
+    const loadStatsBtn = document.getElementById('loadStatsBtn');
+    const downloadStatsBtn = document.getElementById('downloadStatsBtn');
+    const statsLoading = document.getElementById('statsLoading');
+    const statsResult = document.getElementById('statsResult');
+    const distributionFilterSelect = document.getElementById('distributionFilterSelect');
+    const loadDistributionBtn = document.getElementById('loadDistributionBtn');
+    const autoDistributeBtn = document.getElementById('autoDistributeBtn');
+    const distributionLoading = document.getElementById('distributionLoading');
+    const distributionResult = document.getElementById('distributionResult');
+    const selectiveDistributeBtn = document.getElementById('selectiveDistributeBtn');
+    const loadRemainingBtn = document.getElementById('loadRemainingBtn');
+    const remainingLoading = document.getElementById('remainingLoading');
+    const remainingResult = document.getElementById('remainingResult');
+    const assignModal = document.getElementById('assignModal');
+    const assignModalClose = document.getElementById('assignModalClose');
+    const assignModalCancelBtn = document.getElementById('assignModalCancelBtn');
+    const assignModalConfirmBtn = document.getElementById('assignModalConfirmBtn');
+    const assignModalInfo = document.getElementById('assignModalInfo');
+    const assignAccountSelect = document.getElementById('assignAccountSelect');
+    const loginLock = document.getElementById('loginLock');
+    const dashboardView = document.getElementById('dashboardView');
+    const loginEmail = document.getElementById('loginEmail');
+    const loginPassword = document.getElementById('loginPassword');
+    const loginBtn = document.getElementById('loginBtn');
+    const loginError = document.getElementById('loginError');
+
+    // 오늘 날짜로 초기화
+    const today = new Date();
+    statsStartDate.value = today.toISOString().split('T')[0];
+    statsEndDate.value = today.toISOString().split('T')[0];
+
+    // 로컬 스토리지: 분배 이력 및 처리 완료 이력 저장 (목업용 - 페이지 간 공유)
+    // key: `${prefix}_${dateKey}_${id}` -> [{ account, timestamp, type: 'assign' | 'reassign' | 'complete' }]
+    function loadDistributionHistoryFromStorage() {
+      const stored = localStorage.getItem('outbound_distribution_history');
+      if (stored) {
+        try {
+          return new Map(JSON.parse(stored));
+        } catch (e) {
+          return new Map();
+        }
+      }
+      return new Map();
+    }
+
+    function saveDistributionHistoryToStorage(map) {
+      try {
+        const array = Array.from(map.entries());
+        localStorage.setItem('outbound_distribution_history', JSON.stringify(array));
+      } catch (e) {
+        console.error('분배 이력 저장 실패:', e);
+      }
+    }
+
+    function loadProcessingHistoryFromStorage() {
+      const stored = localStorage.getItem('outbound_processing_history');
+      if (stored) {
+        try {
+          return new Map(JSON.parse(stored));
+        } catch (e) {
+          return new Map();
+        }
+      }
+      return new Map();
+    }
+
+    function saveProcessingHistoryToStorage(map) {
+      try {
+        const array = Array.from(map.entries());
+        localStorage.setItem('outbound_processing_history', JSON.stringify(array));
+      } catch (e) {
+        console.error('처리내역 저장 실패:', e);
+      }
+    }
+
+    function loadCounselingHistoryFromStorage() {
+      const stored = localStorage.getItem('outbound_counseling_history');
+      if (stored) {
+        try {
+          return new Map(JSON.parse(stored));
+        } catch (e) {
+          return new Map();
+        }
+      }
+      return new Map();
+    }
+
+    function saveCounselingHistoryToStorage(map) {
+      try {
+        const array = Array.from(map.entries());
+        localStorage.setItem('outbound_counseling_history', JSON.stringify(array));
+      } catch (e) {
+        console.error('상담이력 저장 실패:', e);
+      }
+    }
+
+    let distributionHistoryMap = loadDistributionHistoryFromStorage();
+    let processingHistoryMap = loadProcessingHistoryFromStorage();
+    let counselingHistoryMap = loadCounselingHistoryFromStorage();
+    let allSubmissions = [];
+
+    function formatDate(t) {
+      if (!t) return '-';
+      const d = typeof t === 'number' ? new Date(t) : new Date(t);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ' ' +
+        String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    }
+
+    function escapeHtml(s) {
+      if (s == null) return '';
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function showAdminUI(user) {
+      if (adminUserEmailEl) adminUserEmailEl.textContent = user.email || '';
+      if (loginLock) loginLock.style.display = 'none';
+      if (dashboardView) dashboardView.style.display = 'block';
+    }
+
+    function showLoginUI() {
+      if (loginLock) loginLock.style.display = 'flex';
+      if (dashboardView) dashboardView.style.display = 'none';
+      if (loginError) loginError.textContent = '';
+    }
+
+    // 초기 로드 시 로그인 화면 표시
+    showLoginUI();
+
+    onAuthStateChanged(auth, (user) => {
+      if (!auth) {
+        showLoginUI();
+        return;
+      }
+      if (!user) {
+        showLoginUI();
+        return;
+      }
+      const email = (user.email || '').trim().toLowerCase();
+      const allowed = ALLOWED_EMAILS.some((e) => e.toLowerCase() === email);
+      if (allowed) {
+        showAdminUI(user);
+      } else {
+        signOut(auth).then(() => {
+          showLoginUI();
+        });
+      }
+    });
+
+    if (adminLogoutBtn) {
+      adminLogoutBtn.addEventListener('click', () => {
+        signOut(auth).then(() => showLoginUI());
+      });
+    }
+
+    // 로그인 버튼 이벤트
+    if (loginBtn) {
+      loginBtn.addEventListener('click', async () => {
+        const email = loginEmail.value.trim();
+        const password = loginPassword.value;
+        
+        if (!email || !password) {
+          if (loginError) loginError.textContent = '이메일과 비밀번호를 입력해주세요.';
+          return;
+        }
+
+        if (loginError) loginError.textContent = '';
+        loginBtn.disabled = true;
+        loginBtn.textContent = '로그인 중...';
+
+        try {
+          await signInWithEmailAndPassword(auth, email, password);
+          // onAuthStateChanged에서 자동으로 처리됨
+        } catch (err) {
+          if (loginError) {
+            loginError.textContent = '로그인 실패: ' + (err.message || '알 수 없는 오류');
+          }
+          loginBtn.disabled = false;
+          loginBtn.textContent = '로그인';
+        }
+      });
+
+      // Enter 키로 로그인
+      if (loginPassword) {
+        loginPassword.addEventListener('keypress', (e) => {
+          if (e.key === 'Enter') {
+            loginBtn.click();
+          }
+        });
+      }
+    }
+
+    // 상담사별 실적 통계 조회 (통합)
+    async function loadStats() {
+      if (!db) {
+        statsResult.innerHTML = '<div class="msg error">Firebase가 초기화되지 않았습니다.</div>';
+        return;
+      }
+
+      const startDate = statsStartDate.value;
+      const endDate = statsEndDate.value;
+
+      if (!startDate || !endDate) {
+        statsResult.innerHTML = '<div class="msg error">기간을 선택해주세요.</div>';
+        return;
+      }
+
+      statsLoading.style.display = 'block';
+      statsResult.innerHTML = '';
+      downloadStatsBtn.style.display = 'none';
+
+      try {
+        const startTime = new Date(startDate + 'T00:00:00').getTime();
+        const endTime = new Date(endDate + 'T23:59:59').getTime();
+
+        // localStorage에서 최신 데이터 로드
+        distributionHistoryMap = loadDistributionHistoryFromStorage();
+        processingHistoryMap = loadProcessingHistoryFromStorage();
+        counselingHistoryMap = loadCounselingHistoryFromStorage();
+
+        // localStorage에서 최신 데이터 로드
+        distributionHistoryMap = loadDistributionHistoryFromStorage();
+        processingHistoryMap = loadProcessingHistoryFromStorage();
+        counselingHistoryMap = loadCounselingHistoryFromStorage();
+
+        // 상담사별 통계 수집 (목업: localStorage에서)
+        const accountStats = {};
+        CS_ACCOUNTS.forEach(email => {
+          accountStats[email] = {
+            account: email,
+            distributed: 0, // 분배건수
+            callComplete: 0, // 유선안내완료건수
+            counselingHistory: 0 // 상담이력 작성 건수
+          };
+        });
+
+        // 분배 이력에서 분배건수 계산 (기간 내 최신 분배만 카운트)
+        const latestDistributionMap = new Map(); // key -> { account, timestamp }
+        distributionHistoryMap.forEach((history, key) => {
+          if (Array.isArray(history) && history.length > 0) {
+            const latest = history[history.length - 1];
+            // 분배된 날짜 기준으로 필터링
+            const parts = key.split('_');
+            const dateKey = parts[1];
+            if (dateKey && /^\d{8}$/.test(dateKey)) {
+              const year = dateKey.substring(0, 4);
+              const month = dateKey.substring(4, 6);
+              const day = dateKey.substring(6, 8);
+              const dateStr = year + '-' + month + '-' + day;
+              const itemDate = new Date(dateStr + 'T00:00:00').getTime();
+              
+              if (itemDate >= startTime && itemDate <= endTime) {
+                latestDistributionMap.set(key, latest);
+              }
+            }
+          }
+        });
+
+        latestDistributionMap.forEach((latest, key) => {
+          if (accountStats[latest.account]) {
+            accountStats[latest.account].distributed++;
+          }
+        });
+
+        // 처리내역에서 유선안내완료 통계
+        processingHistoryMap.forEach((history, key) => {
+          if (Array.isArray(history)) {
+            history.forEach(h => {
+              if (h.timestamp >= startTime && h.timestamp <= endTime && accountStats[h.account]) {
+                if (h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')) {
+                  accountStats[h.account].callComplete++;
+                }
+              }
+            });
+          }
+        });
+
+        // 상담이력 통계
+        counselingHistoryMap.forEach((history, key) => {
+          if (Array.isArray(history)) {
+            history.forEach(h => {
+              if (h.timestamp >= startTime && h.timestamp <= endTime && accountStats[h.account]) {
+                accountStats[h.account].counselingHistory++;
+              }
+            });
+          }
+        });
+
+        // 통계 테이블 생성
+        let html = '<table class="stats-table">';
+        html += '<thead><tr>';
+        html += '<th>상담사</th>';
+        html += '<th>분배건수</th>';
+        html += '<th>유선안내<br>완료건수</th>';
+        html += '<th>상담이력<br>작성 건수</th>';
+        html += '<th>처리율</th>';
+        html += '</tr></thead><tbody>';
+
+        Object.values(accountStats).forEach(stat => {
+          const distributed = stat.distributed || 0;
+          const completed = stat.callComplete || 0;
+          const rate = distributed > 0 ? ((completed / distributed) * 100).toFixed(1) : '0.0';
+          
+          html += '<tr>';
+          html += '<td class="text-left">' + escapeHtml(stat.account) + '</td>';
+          html += '<td class="number">' + distributed + '</td>';
+          html += '<td class="number">' + completed + '</td>';
+          html += '<td class="number">' + stat.counselingHistory + '</td>';
+          html += '<td class="number">' + rate + '%</td>';
+          html += '</tr>';
+        });
+
+        html += '</tbody></table>';
+        statsResult.innerHTML = html;
+        downloadStatsBtn.style.display = 'inline-block';
+      } catch (err) {
+        statsResult.innerHTML = '<div class="msg error">통계 조회 실패: ' + escapeHtml(err.message || err) + '</div>';
+      } finally {
+        statsLoading.style.display = 'none';
+      }
+    }
+
+    // 전체 접수건 조회 (현재 기준)
+    async function loadDistribution() {
+      if (!db) {
+        distributionResult.innerHTML = '<div class="msg error">Firebase가 초기화되지 않았습니다.</div>';
+        return;
+      }
+
+      const filterType = distributionFilterSelect.value; // 'noCheck' or 'proofError'
+
+      distributionLoading.style.display = 'block';
+      distributionResult.innerHTML = '';
+
+      try {
+        // 전체 접수건 조회 (날짜 제한 없음)
+        allSubmissions = [];
+        for (const prefix of PREFIXES) {
+          const snap = await get(dbRef(db, prefix + '/submissions_meta'));
+          if (snap.exists()) {
+            snap.forEach((dateSnap) => {
+              const dateKey = dateSnap.key;
+              if (!/^\d{8}$/.test(dateKey)) return;
+              dateSnap.forEach((inner) => {
+                const item = inner.val();
+                allSubmissions.push({
+                  _prefix: prefix,
+                  id: inner.key,
+                  _dateKey: dateKey,
+                  ...item
+                });
+              });
+            });
+          }
+        }
+
+        // 분배 상태 확인 (localStorage에서 최신 로드)
+        distributionHistoryMap = loadDistributionHistoryFromStorage();
+        processingHistoryMap = loadProcessingHistoryFromStorage();
+        counselingHistoryMap = loadCounselingHistoryFromStorage();
+        
+        const distributionMap = new Map();
+        allSubmissions.forEach(item => {
+          const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+          const history = distributionHistoryMap.get(key) || [];
+          const latest = Array.isArray(history) && history.length > 0 ? history[history.length - 1] : null;
+          if (latest) {
+            if (!distributionMap.has(latest.account)) {
+              distributionMap.set(latest.account, []);
+            }
+            distributionMap.get(latest.account).push(item);
+          }
+        });
+
+        // 드롭다운 필터에 따라 미분배 접수건 필터링
+        const unassigned = allSubmissions.filter(item => {
+          const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+          const history = distributionHistoryMap.get(key) || [];
+          const isAssigned = Array.isArray(history) && history.length > 0;
+          
+          // 필터 타입에 따라 필터링
+          if (filterType === 'noCheck') {
+            // 환불/교환 체크 안 된 건만 (증빙오류 아님)
+            const isNotChecked = !item.refundDone && !item.exchangeDone;
+            const isNotProofError = !item.proofError;
+            return !isAssigned && isNotChecked && isNotProofError;
+          } else if (filterType === 'proofError') {
+            // 증빙오류(반려) 건만
+            return !isAssigned && !!item.proofError;
+          }
+          return false;
+        });
+
+        const filterLabel = filterType === 'noCheck' ? '환불/교환 미체크' : '증빙오류(반려)';
+        let html = '<div class="msg info">전체 접수건: ' + allSubmissions.length + '건 | ' + filterLabel + ' 미분배: ' + unassigned.length + '건</div>';
+
+        // 분배 현황 표시 (각 상담원별 분배 건수 및 재분배 버튼)
+        if (distributionMap.size > 0) {
+          html += '<h4 style="margin-top: 16px; margin-bottom: 8px;">현재 분배 현황</h4>';
+          html += '<table class="stats-table" style="margin-bottom: 16px;">';
+          html += '<thead><tr>';
+          html += '<th>상담사</th>';
+          html += '<th>분배 건수</th>';
+          html += '<th>처리완료</th>';
+          html += '<th>미처리</th>';
+          html += '<th>재분배</th>';
+          html += '</tr></thead><tbody>';
+          
+          distributionMap.forEach((items, account) => {
+            const completedCount = items.filter(item => {
+              const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+              const processingHistory = processingHistoryMap.get(key) || [];
+              return Array.isArray(processingHistory) && processingHistory.some(h => 
+                h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')
+              );
+            }).length;
+            const remainingCount = items.length - completedCount;
+            
+            html += '<tr>';
+            html += '<td class="text-left">' + escapeHtml(account) + '</td>';
+            html += '<td class="number">' + items.length + '</td>';
+            html += '<td class="number" style="color: #28a745;">' + completedCount + '</td>';
+            html += '<td class="number" style="color: #dc3545;">' + remainingCount + '</td>';
+            html += '<td>';
+            if (remainingCount > 0) {
+              html += '<button type="button" class="btn-reassign-bulk" data-account="' + escapeHtml(account) + '" data-count="' + remainingCount + '" style="padding: 4px 12px; font-size: 12px; background: #17a; color: #fff; border: none; border-radius: 4px; cursor: pointer;">재분배</button>';
+            } else {
+              html += '-';
+            }
+            html += '</td>';
+            html += '</tr>';
+          });
+          
+          html += '</tbody></table>';
+        }
+
+        // 미분배 접수건 표시
+        if (unassigned.length > 0) {
+          html += '<h4 style="margin-top: 16px; margin-bottom: 8px;">' + filterLabel + ' 미분배 건 (' + unassigned.length + '건)</h4>';
+          html += '<div class="distribution-card">';
+          html += '<div class="distribution-list">';
+          unassigned.forEach(item => {
+            const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+            const category = filterType;
+            html += '<div class="distribution-item">';
+            html += '<div class="distribution-item-info">';
+            html += '<strong>' + escapeHtml(item.name || '-') + ' / ' + escapeHtml(item.contact || '-') + '</strong>';
+            html += '<span>접수ID: ' + escapeHtml(item.id) + ' | ' + PROJECT_LABELS[PREFIXES.indexOf(item._prefix)] + ' | ' + filterLabel + '</span>';
+            html += '</div>';
+            html += '<div class="distribution-item-actions">';
+            html += '<button type="button" class="btn-assign" data-key="' + escapeHtml(key) + '" data-category="' + category + '">분배</button>';
+            html += '</div>';
+            html += '</div>';
+          });
+          html += '</div></div>';
+        }
+
+        distributionResult.innerHTML = html;
+
+        // 분배 버튼 이벤트
+        distributionResult.querySelectorAll('.btn-assign, .btn-reassign').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            const key = btn.getAttribute('data-key');
+            const category = btn.getAttribute('data-category') || '';
+            const item = allSubmissions.find(s => `${s._prefix}_${s._dateKey}_${s.id}` === key);
+            if (item) {
+              openAssignModal(item, key, btn.classList.contains('btn-reassign'), category);
+            }
+          });
+        });
+
+        // 대량 재분배 버튼 이벤트
+        distributionResult.querySelectorAll('.btn-reassign-bulk').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            const fromAccount = btn.getAttribute('data-account');
+            
+            // 해당 상담원의 미처리 건 목록 가져오기
+            const fromItems = distributionMap.get(fromAccount) || [];
+            const uncompletedItems = fromItems.filter(item => {
+              const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+              const processingHistory = processingHistoryMap.get(key) || [];
+              return !Array.isArray(processingHistory) || !processingHistory.some(h => 
+                h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')
+              );
+            });
+            
+            if (uncompletedItems.length === 0) {
+              alert('재분배할 건이 없습니다.');
+              return;
+            }
+            
+            openBulkReassignModal(fromAccount, uncompletedItems);
+          });
+        });
+      } catch (err) {
+        distributionResult.innerHTML = '<div class="msg error">접수건 조회 실패: ' + escapeHtml(err.message || err) + '</div>';
+      } finally {
+        distributionLoading.style.display = 'none';
+      }
+    }
+
+    // 자동 균등 분배
+    async function autoDistribute() {
+      if (allSubmissions.length === 0) {
+        alert('먼저 접수건을 조회해주세요.');
+        return;
+      }
+
+      // 분배 상태 확인 (localStorage에서 최신 로드)
+      distributionHistoryMap = loadDistributionHistoryFromStorage();
+
+      const filterType = distributionFilterSelect.value;
+
+      // 드롭다운 필터에 따라 미분배 접수건 필터링
+      const unassigned = allSubmissions.filter(item => {
+        const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+        const history = distributionHistoryMap.get(key) || [];
+        const isAssigned = Array.isArray(history) && history.length > 0;
+        
+        // 필터 타입에 따라 필터링
+        if (filterType === 'noCheck') {
+          const isNotChecked = !item.refundDone && !item.exchangeDone;
+          const isNotProofError = !item.proofError;
+          return !isAssigned && isNotChecked && isNotProofError;
+        } else if (filterType === 'proofError') {
+          return !isAssigned && !!item.proofError;
+        }
+        return false;
+      });
+
+      if (unassigned.length === 0) {
+        const filterLabel = filterType === 'noCheck' ? '환불/교환 미체크' : '증빙오류(반려)';
+        alert('분배할 접수건이 없습니다. (' + filterLabel + ' 건만 분배 대상입니다)');
+        return;
+      }
+
+      const filterLabel = filterType === 'noCheck' ? '환불/교환 미체크' : '증빙오류(반려)';
+      const msg = filterLabel + ' 미분배 접수건 ' + unassigned.length + '건을 상담사들에게 균등 분배하시겠습니까?';
+      
+      if (!confirm(msg)) {
+        return;
+      }
+
+      const accounts = CS_ACCOUNTS.filter(email => {
+        // 실제로는 활성 상담사만 필터링할 수 있음
+        return true;
+      });
+
+      if (accounts.length === 0) {
+        alert('분배할 상담사가 없습니다.');
+        return;
+      }
+
+      const perAccount = Math.floor(unassigned.length / accounts.length);
+      const remainder = unassigned.length % accounts.length;
+
+      let accountIndex = 0;
+      let assignedCount = 0;
+
+      unassigned.forEach((item, idx) => {
+        const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+        const account = accounts[accountIndex];
+        const category = item.proofError ? 'proofError' : 'noCheck';
+        
+        if (!distributionHistoryMap.has(key)) {
+          distributionHistoryMap.set(key, []);
+        }
+        
+        distributionHistoryMap.get(key).push({
+          account: account,
+          timestamp: Date.now(),
+          type: 'assign',
+          category: category // 카테고리 정보 저장
+        });
+
+        assignedCount++;
+        if (assignedCount >= perAccount + (accountIndex < remainder ? 1 : 0)) {
+          accountIndex++;
+          assignedCount = 0;
+        }
+      });
+
+      saveDistributionHistoryToStorage(distributionHistoryMap);
+      alert('균등 분배가 완료되었습니다.');
+      loadDistribution();
+    }
+
+    // 분배 모달 열기
+    function openAssignModal(item, key, isReassign, category) {
+      const categoryLabel = category === 'proofError' ? '증빙오류(반려)' : '환불/교환 미체크';
+      assignModalInfo.innerHTML = 
+        '<div style="margin-bottom: 16px; padding: 12px; background: #f9f9f9; border-radius: 6px;">' +
+        '<strong>고객:</strong> ' + escapeHtml(item.name || '-') + ' / ' + escapeHtml(item.contact || '-') + '<br>' +
+        '<strong>접수ID:</strong> ' + escapeHtml(item.id) + '<br>' +
+        '<strong>프로젝트:</strong> ' + PROJECT_LABELS[PREFIXES.indexOf(item._prefix)] + '<br>' +
+        '<strong>카테고리:</strong> ' + categoryLabel +
+        '</div>';
+      
+      assignAccountSelect.value = '';
+      assignModal.setAttribute('data-key', key);
+      assignModal.setAttribute('data-reassign', isReassign ? 'true' : 'false');
+      assignModal.setAttribute('data-category', category || '');
+      assignModal.classList.add('show');
+    }
+
+    function closeAssignModal() {
+      assignModal.classList.remove('show');
+      assignModal.removeAttribute('data-key');
+    }
+
+    // 분배 확인
+    assignModalConfirmBtn.addEventListener('click', () => {
+      const key = assignModal.getAttribute('data-key');
+      const account = assignAccountSelect.value;
+      const isReassign = assignModal.getAttribute('data-reassign') === 'true';
+      const category = assignModal.getAttribute('data-category') || '';
+
+      if (!key || !account) {
+        alert('상담사를 선택해주세요.');
+        return;
+      }
+
+      if (!distributionHistoryMap.has(key)) {
+        distributionHistoryMap.set(key, []);
+      }
+
+      distributionHistoryMap.get(key).push({
+        account: account,
+        timestamp: Date.now(),
+        type: isReassign ? 'reassign' : 'assign',
+        category: category // 카테고리 정보 저장
+      });
+
+      saveDistributionHistoryToStorage(distributionHistoryMap);
+      closeAssignModal();
+      loadDistribution();
+    });
+
+    assignModalClose.addEventListener('click', closeAssignModal);
+    assignModalCancelBtn.addEventListener('click', closeAssignModal);
+    assignModal.addEventListener('click', (e) => {
+      if (e.target === assignModal) closeAssignModal();
+    });
+
+
+    // 선택 분배 (현재 분배 현황 표시 및 재분배)
+    async function selectiveDistribute() {
+      if (allSubmissions.length === 0) {
+        alert('먼저 접수건을 조회해주세요.');
+        return;
+      }
+
+      // 분배 현황을 모달로 표시
+      distributionHistoryMap = loadDistributionHistoryFromStorage();
+      processingHistoryMap = loadProcessingHistoryFromStorage();
+      
+      const distributionMap = new Map();
+      allSubmissions.forEach(item => {
+        const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+        const history = distributionHistoryMap.get(key) || [];
+        const latest = Array.isArray(history) && history.length > 0 ? history[history.length - 1] : null;
+        if (latest) {
+          if (!distributionMap.has(latest.account)) {
+            distributionMap.set(latest.account, []);
+          }
+          distributionMap.get(latest.account).push(item);
+        }
+      });
+
+      if (distributionMap.size === 0) {
+        alert('현재 분배된 접수건이 없습니다.');
+        return;
+      }
+
+      // 분배 현황 모달 표시
+      let modalHtml = '<div style="max-height: 60vh; overflow-y: auto;">';
+      modalHtml += '<table class="stats-table" style="width: 100%;">';
+      modalHtml += '<thead><tr>';
+      modalHtml += '<th>상담사</th>';
+      modalHtml += '<th>분배 건수</th>';
+      modalHtml += '<th>처리완료</th>';
+      modalHtml += '<th>미처리</th>';
+      modalHtml += '<th>재분배</th>';
+      modalHtml += '</tr></thead><tbody>';
+
+      distributionMap.forEach((items, account) => {
+        const completedCount = items.filter(item => {
+          const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+          const processingHistory = processingHistoryMap.get(key) || [];
+          return Array.isArray(processingHistory) && processingHistory.some(h => 
+            h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')
+          );
+        }).length;
+        const remainingCount = items.length - completedCount;
+
+        modalHtml += '<tr>';
+        modalHtml += '<td class="text-left">' + escapeHtml(account) + '</td>';
+        modalHtml += '<td class="number">' + items.length + '</td>';
+        modalHtml += '<td class="number" style="color: #28a745;">' + completedCount + '</td>';
+        modalHtml += '<td class="number" style="color: #dc3545;">' + remainingCount + '</td>';
+        modalHtml += '<td>';
+        if (remainingCount > 0) {
+          modalHtml += '<button type="button" class="btn-reassign-bulk-modal" data-account="' + escapeHtml(account) + '" data-count="' + remainingCount + '" style="padding: 4px 12px; font-size: 12px; background: #17a; color: #fff; border: none; border-radius: 4px; cursor: pointer;">재분배</button>';
+        } else {
+          modalHtml += '-';
+        }
+        modalHtml += '</td>';
+        modalHtml += '</tr>';
+      });
+
+      modalHtml += '</tbody></table>';
+      modalHtml += '</div>';
+
+      // 모달 표시
+      const modal = document.createElement('div');
+      modal.className = 'modal-overlay show';
+      modal.innerHTML = `
+        <div class="modal-box">
+          <div class="modal-header">
+            <h3>현재 분배 현황</h3>
+            <button type="button" class="modal-close" id="selectiveModalClose">닫기</button>
+          </div>
+          <div class="modal-body">
+            ${modalHtml}
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+
+      // 모달 닫기
+      const closeBtn = modal.querySelector('#selectiveModalClose');
+      const closeModal = () => {
+        document.body.removeChild(modal);
+      };
+      closeBtn.addEventListener('click', closeModal);
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+      });
+
+      // 재분배 버튼 이벤트
+      modal.querySelectorAll('.btn-reassign-bulk-modal').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const fromAccount = btn.getAttribute('data-account');
+          const fromItems = distributionMap.get(fromAccount) || [];
+          const uncompletedItems = fromItems.filter(item => {
+            const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+            const processingHistory = processingHistoryMap.get(key) || [];
+            return !Array.isArray(processingHistory) || !processingHistory.some(h => 
+              h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')
+            );
+          });
+          closeModal();
+          openBulkReassignModal(fromAccount, uncompletedItems);
+        });
+      });
+    }
+
+    // 대량 재분배 모달
+    function openBulkReassignModal(fromAccount, items) {
+      const count = prompt(fromAccount + '의 미처리 건 ' + items.length + '건 중 몇 건을 재분배하시겠습니까?');
+      const transferCount = parseInt(count) || 0;
+      
+      if (transferCount <= 0 || transferCount > items.length) {
+        alert('올바른 건수를 입력해주세요.');
+        return;
+      }
+
+      const toAccount = prompt('재분배할 상담사를 선택하세요:\n\n' +
+        CS_ACCOUNTS.filter(e => e !== fromAccount).map((e, i) => (i + 1) + '. ' + e).join('\n') + '\n\n상담사 이메일을 입력하세요:');
+      
+      if (!toAccount || !CS_ACCOUNTS.includes(toAccount.trim()) || toAccount.trim() === fromAccount) {
+        alert('올바른 상담사 이메일을 입력해주세요.');
+        return;
+      }
+
+      if (!confirm(fromAccount + '의 미처리 건 ' + transferCount + '건을 ' + toAccount.trim() + '에게 재분배하시겠습니까?')) {
+        return;
+      }
+
+      // 재분배 처리
+      distributionHistoryMap = loadDistributionHistoryFromStorage();
+      const itemsToTransfer = items.slice(0, transferCount);
+      
+      itemsToTransfer.forEach(item => {
+        const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+        if (!distributionHistoryMap.has(key)) {
+          distributionHistoryMap.set(key, []);
+        }
+        
+        const category = item.proofError ? 'proofError' : 'noCheck';
+        distributionHistoryMap.get(key).push({
+          account: toAccount.trim(),
+          timestamp: Date.now(),
+          type: 'reassign',
+          fromAccount: fromAccount,
+          category: category
+        });
+      });
+
+      saveDistributionHistoryToStorage(distributionHistoryMap);
+      alert('재분배가 완료되었습니다.');
+      loadDistribution();
+    }
+
+    // 상담사별 잔여건 조회 및 이관
+    async function loadRemaining() {
+      if (!db) {
+        remainingResult.innerHTML = '<div class="msg error">Firebase가 초기화되지 않았습니다.</div>';
+        return;
+      }
+
+      remainingLoading.style.display = 'block';
+      remainingResult.innerHTML = '';
+
+      try {
+        distributionHistoryMap = loadDistributionHistoryFromStorage();
+        processingHistoryMap = loadProcessingHistoryFromStorage();
+
+        // 모든 접수 데이터 로드 (최근 30일)
+        const allItems = [];
+        const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+        
+        for (const prefix of PREFIXES) {
+          const snap = await get(dbRef(db, prefix + '/submissions_meta'));
+          if (snap.exists()) {
+            snap.forEach((dateSnap) => {
+              const dateKey = dateSnap.key;
+              if (!/^\d{8}$/.test(dateKey)) return;
+              dateSnap.forEach((inner) => {
+                const item = inner.val();
+                if (item.createdAt && item.createdAt >= thirtyDaysAgo) {
+                  allItems.push({
+                    _prefix: prefix,
+                    id: inner.key,
+                    _dateKey: dateKey,
+                    ...item
+                  });
+                }
+              });
+            });
+          }
+        }
+
+        // 상담사별 잔여건 계산
+        const accountRemaining = {};
+        CS_ACCOUNTS.forEach(email => {
+          accountRemaining[email] = {
+            account: email,
+            total: 0,
+            completed: 0,
+            remaining: 0,
+            items: []
+          };
+        });
+
+        allItems.forEach(item => {
+          const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+          const history = distributionHistoryMap.get(key) || [];
+          if (Array.isArray(history) && history.length > 0) {
+            const latest = history[history.length - 1];
+            const account = latest.account;
+            if (accountRemaining[account]) {
+              accountRemaining[account].total++;
+              accountRemaining[account].items.push(item);
+              
+              // 처리완료 여부 확인
+              const processingHistory = processingHistoryMap.get(key) || [];
+              const isCompleted = Array.isArray(processingHistory) && processingHistory.some(h => 
+                h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')
+              );
+              
+              if (isCompleted) {
+                accountRemaining[account].completed++;
+              } else {
+                accountRemaining[account].remaining++;
+              }
+            }
+          }
+        });
+
+        // 잔여건 표시
+        let html = '<table class="stats-table">';
+        html += '<thead><tr>';
+        html += '<th>상담사</th>';
+        html += '<th>총 분배</th>';
+        html += '<th>처리완료</th>';
+        html += '<th>잔여건</th>';
+        html += '<th>처리율</th>';
+        html += '<th>이관</th>';
+        html += '</tr></thead><tbody>';
+
+        Object.values(accountRemaining).forEach(stat => {
+          const rate = stat.total > 0 ? ((stat.completed / stat.total) * 100).toFixed(1) : '0.0';
+          html += '<tr>';
+          html += '<td class="text-left">' + escapeHtml(stat.account) + '</td>';
+          html += '<td class="number">' + stat.total + '</td>';
+          html += '<td class="number">' + stat.completed + '</td>';
+          html += '<td class="number">' + stat.remaining + '</td>';
+          html += '<td class="number">' + rate + '%</td>';
+          html += '<td>';
+          if (stat.remaining > 0) {
+            html += '<button type="button" class="btn-reassign" data-account="' + escapeHtml(stat.account) + '" data-count="' + stat.remaining + '">이관</button>';
+          } else {
+            html += '-';
+          }
+          html += '</td>';
+          html += '</tr>';
+        });
+
+        html += '</tbody></table>';
+        remainingResult.innerHTML = html;
+
+        // 이관 버튼 이벤트
+        remainingResult.querySelectorAll('.btn-reassign').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const fromAccount = btn.getAttribute('data-account');
+            const count = parseInt(btn.getAttribute('data-count'));
+            const remainingItems = accountRemaining[fromAccount].items.filter(item => {
+              const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+              const processingHistory = processingHistoryMap.get(key) || [];
+              return !Array.isArray(processingHistory) || !processingHistory.some(h => 
+                h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')
+              );
+            });
+            openTransferModal(fromAccount, remainingItems);
+          });
+        });
+      } catch (err) {
+        remainingResult.innerHTML = '<div class="msg error">잔여건 조회 실패: ' + escapeHtml(err.message || err) + '</div>';
+      } finally {
+        remainingLoading.style.display = 'none';
+      }
+    }
+
+    // 이관 모달 열기
+    function openTransferModal(fromAccount, items) {
+      const account = prompt('잔여건 ' + items.length + '건을 이관할 상담사를 선택하세요:\n\n' +
+        CS_ACCOUNTS.filter(e => e !== fromAccount).map((e, i) => (i + 1) + '. ' + e).join('\n') + '\n\n상담사 이메일을 입력하세요:');
+      
+      if (!account || !CS_ACCOUNTS.includes(account.trim()) || account.trim() === fromAccount) {
+        alert('올바른 상담사 이메일을 입력해주세요.');
+        return;
+      }
+
+      const toAccount = account.trim();
+      const count = prompt('몇 건을 이관하시겠습니까? (최대 ' + items.length + '건):');
+      const transferCount = parseInt(count) || 0;
+      
+      if (transferCount <= 0 || transferCount > items.length) {
+        alert('올바른 건수를 입력해주세요.');
+        return;
+      }
+
+      if (!confirm(fromAccount + '의 잔여건 ' + transferCount + '건을 ' + toAccount + '에게 이관하시겠습니까?')) {
+        return;
+      }
+
+      // 이관 처리
+      distributionHistoryMap = loadDistributionHistoryFromStorage();
+      const itemsToTransfer = items.slice(0, transferCount);
+      
+      itemsToTransfer.forEach(item => {
+        const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+        if (!distributionHistoryMap.has(key)) {
+          distributionHistoryMap.set(key, []);
+        }
+        
+        distributionHistoryMap.get(key).push({
+          account: toAccount,
+          timestamp: Date.now(),
+          type: 'reassign',
+          fromAccount: fromAccount
+        });
+      });
+
+      saveDistributionHistoryToStorage(distributionHistoryMap);
+      alert('이관이 완료되었습니다.');
+      loadRemaining();
+    }
+
+
+    // 이벤트 리스너
+    if (loadStatsBtn) loadStatsBtn.addEventListener('click', loadStats);
+    if (loadDistributionBtn) loadDistributionBtn.addEventListener('click', loadDistribution);
+    if (autoDistributeBtn) autoDistributeBtn.addEventListener('click', autoDistribute);
+    if (selectiveDistributeBtn) selectiveDistributeBtn.addEventListener('click', selectiveDistribute);
+    if (loadRemainingBtn) loadRemainingBtn.addEventListener('click', loadRemaining);
+
+    // CSV 다운로드
+    if (downloadStatsBtn) {
+      downloadStatsBtn.addEventListener('click', () => {
+        // TODO: CSV 다운로드 구현
+        alert('CSV 다운로드 기능은 확정 후 구현됩니다.');
+      });
+    }
+  </script>
+</body>
+</html>
