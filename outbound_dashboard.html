@@ -390,6 +390,12 @@
     const loadRemainingBtn = document.getElementById('loadRemainingBtn');
     const remainingLoading = document.getElementById('remainingLoading');
     const remainingResult = document.getElementById('remainingResult');
+    const historyStartDate = document.getElementById('historyStartDate');
+    const historyEndDate = document.getElementById('historyEndDate');
+    const historyAccountSelect = document.getElementById('historyAccountSelect');
+    const loadHistoryBtn = document.getElementById('loadHistoryBtn');
+    const historyLoading = document.getElementById('historyLoading');
+    const historyResult = document.getElementById('historyResult');
     const assignModal = document.getElementById('assignModal');
     const assignModalClose = document.getElementById('assignModalClose');
     const assignModalCancelBtn = document.getElementById('assignModalCancelBtn');
@@ -407,6 +413,8 @@
     const today = new Date();
     statsStartDate.value = today.toISOString().split('T')[0];
     statsEndDate.value = today.toISOString().split('T')[0];
+    if (historyStartDate) historyStartDate.value = today.toISOString().split('T')[0];
+    if (historyEndDate) historyEndDate.value = today.toISOString().split('T')[0];
 
     // 로컬 스토리지: 분배 이력 저장 (목업용 - 대시보드가 관리)
     // key: `${prefix}_${dateKey}_${id}` -> [{ account, timestamp, type: 'assign' | 'reassign' | 'complete' }]
@@ -1324,6 +1332,122 @@
       }
     }
 
+    // 분배 이력 조회
+    async function loadHistory() {
+      if (!db) {
+        historyResult.innerHTML = '<div class="msg error">Firebase가 초기화되지 않았습니다.</div>';
+        return;
+      }
+
+      const startDate = historyStartDate.value;
+      const endDate = historyEndDate.value;
+      const selectedAccount = historyAccountSelect.value;
+
+      if (!startDate || !endDate) {
+        historyResult.innerHTML = '<div class="msg error">기간을 선택해주세요.</div>';
+        return;
+      }
+
+      historyLoading.style.display = 'block';
+      historyResult.innerHTML = '';
+
+      try {
+        const startTime = new Date(startDate + 'T00:00:00').getTime();
+        const endTime = new Date(endDate + 'T23:59:59').getTime();
+
+        distributionHistoryMap = loadDistributionHistoryFromStorage();
+        processingHistoryMap = loadProcessingHistoryFromStorage();
+
+        // 날짜별, 상담사별 분배 이력 수집
+        const historyByDate = {}; // dateKey -> { account -> { distributed, completed } }
+
+        distributionHistoryMap.forEach((history, key) => {
+          if (Array.isArray(history) && history.length > 0) {
+            const parts = key.split('_');
+            const dateKey = parts[1];
+            if (dateKey && /^\d{8}$/.test(dateKey)) {
+              const year = dateKey.substring(0, 4);
+              const month = dateKey.substring(4, 6);
+              const day = dateKey.substring(6, 8);
+              const dateStr = year + '-' + month + '-' + day;
+              const itemDate = new Date(dateStr + 'T00:00:00').getTime();
+              
+              if (itemDate >= startTime && itemDate <= endTime) {
+                const latest = history[history.length - 1];
+                const account = latest.account;
+                
+                // 선택된 상담사 필터링
+                if (selectedAccount && account !== selectedAccount) {
+                  return;
+                }
+
+                if (!historyByDate[dateKey]) {
+                  historyByDate[dateKey] = {};
+                }
+                if (!historyByDate[dateKey][account]) {
+                  historyByDate[dateKey][account] = { distributed: 0, completed: 0 };
+                }
+                historyByDate[dateKey][account].distributed++;
+
+                // 처리완료 여부 확인
+                const processingHistory = processingHistoryMap.get(key) || [];
+                const isCompleted = Array.isArray(processingHistory) && processingHistory.some(h => 
+                  h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')
+                );
+                if (isCompleted) {
+                  historyByDate[dateKey][account].completed++;
+                }
+              }
+            }
+          }
+        });
+
+        // 결과 테이블 생성
+        let html = '<table class="stats-table">';
+        html += '<thead><tr>';
+        html += '<th>날짜</th>';
+        html += '<th>상담사</th>';
+        html += '<th>분배 건수</th>';
+        html += '<th>처리완료 건수</th>';
+        html += '<th>처리율</th>';
+        html += '</tr></thead><tbody>';
+
+        const sortedDates = Object.keys(historyByDate).sort().reverse();
+        sortedDates.forEach(dateKey => {
+          const year = dateKey.substring(0, 4);
+          const month = dateKey.substring(4, 6);
+          const day = dateKey.substring(6, 8);
+          const dateStr = year + '-' + month + '-' + day;
+          
+          const accounts = Object.keys(historyByDate[dateKey]).sort();
+          accounts.forEach(account => {
+            const stat = historyByDate[dateKey][account];
+            const rate = stat.distributed > 0 ? ((stat.completed / stat.distributed) * 100).toFixed(1) : '0.0';
+            
+            html += '<tr>';
+            html += '<td>' + dateStr + '</td>';
+            html += '<td class="text-left">' + escapeHtml(account) + '</td>';
+            html += '<td class="number">' + stat.distributed + '</td>';
+            html += '<td class="number">' + stat.completed + '</td>';
+            html += '<td class="number">' + rate + '%</td>';
+            html += '</tr>';
+          });
+        });
+
+        html += '</tbody></table>';
+
+        if (sortedDates.length === 0) {
+          html = '<div class="msg info">조회된 분배 이력이 없습니다.</div>';
+        }
+
+        historyResult.innerHTML = html;
+      } catch (err) {
+        historyResult.innerHTML = '<div class="msg error">이력 조회 실패: ' + escapeHtml(err.message || err) + '</div>';
+      } finally {
+        historyLoading.style.display = 'none';
+      }
+    }
+
     // 이관 모달 열기
     function openTransferModal(fromAccount, items) {
       const account = prompt('잔여건 ' + items.length + '건을 이관할 상담사를 선택하세요:\n\n' +
@@ -1377,12 +1501,46 @@
     if (autoDistributeBtn) autoDistributeBtn.addEventListener('click', autoDistribute);
     if (selectiveDistributeBtn) selectiveDistributeBtn.addEventListener('click', selectiveDistribute);
     if (loadRemainingBtn) loadRemainingBtn.addEventListener('click', loadRemaining);
+    if (loadHistoryBtn) loadHistoryBtn.addEventListener('click', loadHistory);
 
     // CSV 다운로드
     if (downloadStatsBtn) {
       downloadStatsBtn.addEventListener('click', () => {
-        // TODO: CSV 다운로드 구현
-        alert('CSV 다운로드 기능은 확정 후 구현됩니다.');
+        const table = statsResult.querySelector('.stats-table');
+        if (!table) {
+          alert('먼저 통계를 조회해주세요.');
+          return;
+        }
+
+        // CSV 데이터 생성
+        let csv = '상담사,분배건수,유선안내완료건수,상담이력작성건수,처리율\n';
+        
+        const rows = table.querySelectorAll('tbody tr');
+        rows.forEach(row => {
+          const cells = row.querySelectorAll('td');
+          if (cells.length >= 5) {
+            const account = cells[0].textContent.trim();
+            const distributed = cells[1].textContent.trim();
+            const completed = cells[2].textContent.trim();
+            const counseling = cells[3].textContent.trim();
+            const rate = cells[4].textContent.trim();
+            csv += `"${account}",${distributed},${completed},${counseling},${rate}\n`;
+          }
+        });
+
+        // CSV 파일 다운로드
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        
+        const startDate = statsStartDate.value || '전체';
+        const endDate = statsEndDate.value || '전체';
+        link.setAttribute('download', `아웃바운드_실적통계_${startDate}_${endDate}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       });
     }
   </script>
