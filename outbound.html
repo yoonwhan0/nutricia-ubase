@@ -414,6 +414,7 @@
     let metaSnaps = {};
     let currentDetailData = null;
     let currentUserEmail = '';
+    let isSigningOut = false; // 무한 루프 방지 플래그
     
     // 로컬 스토리지: 처리내역 및 상담이력 저장 (목업용 - CS 계정이 작성)
     // key: `${prefix}_${dateKey}_${id}`
@@ -539,7 +540,9 @@
 
     onAuthStateChanged(auth, (user) => {
       if (!auth) return;
+      if (isSigningOut) return; // signOut 진행 중이면 무시
       if (!user) {
+        currentUserEmail = '';
         showLoginUI();
         return;
       }
@@ -548,9 +551,14 @@
       if (allowed) {
         showAdminUI(user);
       } else {
+        isSigningOut = true;
         signOut(auth).then(() => {
+          isSigningOut = false;
+          currentUserEmail = '';
           showLoginUI();
           if (adminLockError) adminLockError.textContent = '이 페이지에 접근 권한이 있는 계정이 아닙니다.';
+        }).catch(() => {
+          isSigningOut = false;
         });
       }
     });
@@ -578,7 +586,16 @@
     adminUnlockBtn.addEventListener('click', handleLogin);
     adminKeyInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') handleLogin(); });
     if (adminEmailInput) adminEmailInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') handleLogin(); });
-    if (adminLogoutBtn) adminLogoutBtn.addEventListener('click', () => { signOut(auth).then(() => showLoginUI()); });
+    if (adminLogoutBtn) adminLogoutBtn.addEventListener('click', () => {
+      isSigningOut = true;
+      signOut(auth).then(() => {
+        isSigningOut = false;
+        currentUserEmail = '';
+        showLoginUI();
+      }).catch(() => {
+        isSigningOut = false;
+      });
+    });
 
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && listView && listView.style.display !== 'none') {

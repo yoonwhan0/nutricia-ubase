@@ -462,6 +462,7 @@
     let processingHistoryMap = loadProcessingHistoryFromStorage();
     let counselingHistoryMap = loadCounselingHistoryFromStorage();
     let allSubmissions = [];
+    let isSigningOut = false; // 무한 루프 방지 플래그
 
     function formatDate(t) {
       if (!t) return '-';
@@ -495,6 +496,7 @@
         showLoginUI();
         return;
       }
+      if (isSigningOut) return; // signOut 진행 중이면 무시
       if (!user) {
         showLoginUI();
         return;
@@ -504,15 +506,25 @@
       if (allowed) {
         showAdminUI(user);
       } else {
+        isSigningOut = true;
         signOut(auth).then(() => {
+          isSigningOut = false;
           showLoginUI();
+        }).catch(() => {
+          isSigningOut = false;
         });
       }
     });
 
     if (adminLogoutBtn) {
       adminLogoutBtn.addEventListener('click', () => {
-        signOut(auth).then(() => showLoginUI());
+        isSigningOut = true;
+        signOut(auth).then(() => {
+          isSigningOut = false;
+          showLoginUI();
+        }).catch(() => {
+          isSigningOut = false;
+        });
       });
     }
 
