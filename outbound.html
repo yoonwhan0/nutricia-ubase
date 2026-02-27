@@ -616,7 +616,22 @@
 
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && listView && listView.style.display !== 'none') {
-        if (Object.keys(metaSnaps).length === 0) loadMetaOnce();
+        if (Object.keys(metaSnaps).length === 0) {
+          loadMetaOnce();
+        } else {
+          distributionHistoryMap = loadDistributionHistoryFromStorage();
+          renderTable();
+        }
+      }
+    });
+
+    // 대시보드에서 분배 시 localStorage 변경 감지 → 목록 자동 갱신 (다른 탭에서 분배해도 로컬에서 즉시 반영)
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'outbound_dashboard_distribution_history' && listView && listView.style.display !== 'none') {
+        distributionHistoryMap = loadDistributionHistoryFromStorage();
+        if (Object.keys(metaSnaps).length === PREFIXES.length) {
+          renderTable();
+        }
       }
     });
 
@@ -890,11 +905,10 @@
       const headerRow =
         '<th class="cell-seq">순번</th>' +
         '<th class="cell-project">접수경로</th>' +
-        '<th>사진 보기</th>' +
-        '<th>이름</th><th>연락처</th><th>주소</th><th>상세 주소</th><th>개인통관부호</th>' +
-        '<th>접수ID</th><th>접수일시</th>' +
-        '<th>환불</th><th>교환</th><th>잘못된정보</th><th>6캔이상</th><th>환불완료</th><th>교환완료</th><th>증빙오류(반려)</th><th>사유</th>' +
-        '<th>유선안내완료</th><th>상담이력</th><th>처리내역</th>';
+        '<th>사진</th>' +
+        '<th>이름</th><th>연락처</th><th>접수일시</th>' +
+        '<th>환불</th><th>교환</th><th>잘못된정보</th><th>유선안내완료</th><th>최종미연결</th>' +
+        '<th>상담이력</th><th>처리내역</th><th>상세</th>';
 
       let rowsHtml = '';
       pageItems.forEach((d) => {
@@ -907,33 +921,26 @@
         const refundC = d.refundDone ? ' checked' : '';
         const exchangeC = d.exchangeDone ? ' checked' : '';
         const invalidC = d.invalidInfo ? ' checked' : '';
-        const sixCansC = d.sixCansOrMore ? ' checked' : '';
         const callCompleteC = d.callComplete ? ' checked' : '';
+        const finalUnreachedC = d.finalUnreached ? ' checked' : '';
         const locked = !!(d.refundComplete || d.exchangeComplete);
         const lockedAttr = locked ? ' disabled title="처리 완료 건 — 수정 불가"' : '';
 
         rowsHtml += '<tr data-id="' + escapeAttr(d.id) + '" data-date-key="' + escapeAttr(dateKey) + '" data-legacy="' + (isLegacy ? '1' : '0') + '" data-prefix="' + escapeAttr(prefix) + '" data-project-index="' + d._projectIndex + '" data-locked="' + (locked ? '1' : '0') + '">';
         rowsHtml += '<td class="cell-seq">' + seq + '</td>';
         rowsHtml += '<td class="cell-project">' + proj + '</td>';
-        rowsHtml += '<td><button type="button" class="btn btn-primary photo-view-btn" style="font-size:11px;padding:2px 6px;">사진 보기</button></td>';
+        rowsHtml += '<td><button type="button" class="btn btn-primary photo-view-btn" style="font-size:11px;padding:2px 6px;">사진</button></td>';
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.name || '-') + '</span></td>';
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.contact || '-') + '</span></td>';
-        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.address || '-') + '</span></td>';
-        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.addressDetail || '-') + '</span></td>';
-        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.customsCode || '-') + '</span></td>';
-        rowsHtml += '<td>' + escapeHtml(d.id || '-') + '</td>';
         rowsHtml += '<td>' + formatDate(d.createdAt) + '</td>';
         rowsHtml += '<td><label><input type="checkbox" class="list-cb-refund" data-field="refundDone"' + refundC + lockedAttr + '> 환불</label></td>';
         rowsHtml += '<td><label><input type="checkbox" class="list-cb-exchange" data-field="exchangeDone"' + exchangeC + lockedAttr + '> 교환</label></td>';
         rowsHtml += '<td><label><input type="checkbox" class="list-cb-invalid" data-field="invalidInfo"' + invalidC + lockedAttr + '> 잘못</label></td>';
-        rowsHtml += '<td><label><input type="checkbox" class="list-cb-sixCans" data-field="sixCansOrMore"' + sixCansC + '> 6캔이상</label></td>';
-        rowsHtml += '<td class="cell-flag">' + (d.refundComplete ? 'Y' : '-') + '</td>';
-        rowsHtml += '<td class="cell-flag">' + (d.exchangeComplete ? 'Y' : '-') + '</td>';
-        rowsHtml += '<td class="cell-flag">' + (d.proofError ? 'Y' : '-') + '</td>';
-        rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.proofErrorReason || '-') + '</span></td>';
         rowsHtml += '<td><label><input type="checkbox" class="list-cb-callComplete" data-field="callComplete"' + callCompleteC + '> 완료</label></td>';
+        rowsHtml += '<td><label><input type="checkbox" class="list-cb-finalUnreached" data-field="finalUnreached"' + finalUnreachedC + '> 미연결</label></td>';
         rowsHtml += '<td><button type="button" class="btn btn-primary detail-view-btn" style="font-size:11px;padding:2px 6px;">상담이력</button></td>';
         rowsHtml += '<td><button type="button" class="btn btn-primary history-view-btn" style="font-size:11px;padding:2px 6px;">처리내역</button></td>';
+        rowsHtml += '<td><button type="button" class="btn btn-primary detail-modal-btn" style="font-size:11px;padding:2px 6px;">상세</button></td>';
         rowsHtml += '</tr>';
       });
 
@@ -957,7 +964,7 @@
       infoP.className = 'msg info';
       const filterLabel = viewFilter === 'all' ? '' : (viewFilter === 'proofError' ? '증빙오류(반려)' : (viewFilter === 'noRefundExchange' ? '환불·교환 미체크' : '유선안내 미완료'));
       const baseMsg = (searchFilters.name || searchFilters.contact || searchFilters.customsCode || searchFilters.uniqueCode) ? ('검색 결과 ' + total + '건 (전체 ' + allItems.length + '건 중)') : (filterLabel ? '[' + filterLabel + '] ' + total + '건' : '전체 ' + total + '건');
-      infoP.textContent = baseMsg + ', 페이지당 30건. 환불/교환/잘못된정보/6캔이상/유선안내완료 체크 변경 가능.';
+      infoP.textContent = baseMsg + ', 페이지당 30건. 환불/교환/잘못된정보/유선안내완료/최종미연결 체크 변경 가능.';
       listEl.insertBefore(infoP, listEl.firstChild);
 
       listEl.querySelectorAll('.admin-page-btn').forEach((btn) => {
@@ -974,13 +981,29 @@
       attachPhotoViewButtons();
       attachDetailViewButtons();
       attachHistoryViewButtons();
+      attachDetailModalButtons();
+    }
+
+    function attachDetailModalButtons() {
+      listEl.querySelectorAll('.detail-modal-btn').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const row = btn.closest('tr');
+          if (!row) return;
+          const id = row.getAttribute('data-id');
+          const dateKey = row.getAttribute('data-date-key') || '';
+          const prefix = row.getAttribute('data-prefix') || '';
+          const d = allItems.find((it) => String(it.id) === String(id) && (it._dateKey || '') === dateKey && it._prefix === prefix);
+          if (d) openDetailModal(d);
+        });
+      });
     }
 
     function attachCheckboxListeners() {
       const tbody = listEl.querySelector('tbody');
       if (!tbody) return;
       tbody.querySelectorAll('tr').forEach((row) => {
-        row.querySelectorAll('.list-cb-refund, .list-cb-exchange, .list-cb-invalid, .list-cb-sixCans, .list-cb-callComplete').forEach((cb) => {
+        row.querySelectorAll('.list-cb-refund, .list-cb-exchange, .list-cb-invalid, .list-cb-callComplete, .list-cb-finalUnreached').forEach((cb) => {
           cb.addEventListener('change', () => {
             saveFlagsOnly(row);
           });
@@ -1004,8 +1027,8 @@
       let refundDone = !!row.querySelector('.list-cb-refund')?.checked;
       let exchangeDone = !!row.querySelector('.list-cb-exchange')?.checked;
       let invalidInfo = !!row.querySelector('.list-cb-invalid')?.checked;
-      const sixCansOrMore = !!row.querySelector('.list-cb-sixCans')?.checked;
       const callComplete = !!row.querySelector('.list-cb-callComplete')?.checked;
+      const finalUnreached = !!row.querySelector('.list-cb-finalUnreached')?.checked;
       
       if (locked && item) {
         refundDone = !!item.refundDone;
@@ -1017,19 +1040,19 @@
         refundDone: item?.refundDone || false,
         exchangeDone: item?.exchangeDone || false,
         invalidInfo: item?.invalidInfo || false,
-        sixCansOrMore: item?.sixCansOrMore || false,
-        callComplete: item?.callComplete || false
+        callComplete: item?.callComplete || false,
+        finalUnreached: item?.finalUnreached || false
       };
       
-      const newValues = { refundDone, exchangeDone, invalidInfo, sixCansOrMore, callComplete };
+      const newValues = { refundDone, exchangeDone, invalidInfo, callComplete, finalUnreached };
       const changes = [];
       if (oldValues.refundDone !== newValues.refundDone) changes.push('환불: ' + (newValues.refundDone ? '체크' : '해제'));
       if (oldValues.exchangeDone !== newValues.exchangeDone) changes.push('교환: ' + (newValues.exchangeDone ? '체크' : '해제'));
       if (oldValues.invalidInfo !== newValues.invalidInfo) changes.push('잘못된정보: ' + (newValues.invalidInfo ? '체크' : '해제'));
-      if (oldValues.sixCansOrMore !== newValues.sixCansOrMore) changes.push('6캔이상: ' + (newValues.sixCansOrMore ? '체크' : '해제'));
       if (oldValues.callComplete !== newValues.callComplete) changes.push('유선안내완료: ' + (newValues.callComplete ? '체크' : '해제'));
+      if (oldValues.finalUnreached !== newValues.finalUnreached) changes.push('최종미연결: ' + (newValues.finalUnreached ? '체크' : '해제'));
       
-      const payload = { refundDone, exchangeDone, invalidInfo, sixCansOrMore, callComplete };
+      const payload = { refundDone, exchangeDone, invalidInfo, callComplete, finalUnreached };
       const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
       const metaPath = prefix + '/submissions_meta/' + dateKey + '/' + id;
       
@@ -1068,8 +1091,8 @@
         it.refundDone = refundDone;
         it.exchangeDone = exchangeDone;
         it.invalidInfo = invalidInfo;
-        it.sixCansOrMore = sixCansOrMore;
         it.callComplete = callComplete;
+        it.finalUnreached = finalUnreached;
       }
       // 목업 모드에서는 화면 새로고침 없이 체크박스 상태만 유지됨
       // renderTable() 호출 제거
@@ -1338,8 +1361,7 @@
       infoRowsEl.innerHTML =
         '<div class="info-row"><strong>이름</strong> ' + escapeHtml(d.name || '-') + '</div>' +
         '<div class="info-row"><strong>연락처</strong> ' + escapeHtml(d.contact || '-') + '</div>' +
-        '<div class="info-row"><strong>주소</strong> ' + escapeHtml(d.address || '-') + '</div>' +
-        '<div class="info-row"><strong>상세주소</strong> ' + escapeHtml(d.addressDetail || '-') + '</div>' +
+        '<div class="info-row"><strong>주소</strong> ' + escapeHtml(d.address || '-') + ' ' + escapeHtml(d.addressDetail || '') + '</div>' +
         '<div class="info-row"><strong>개인통관부호</strong> ' + escapeHtml(d.customsCode || '-') + '</div>' +
         '<div class="info-row"><strong>접수ID</strong> ' + escapeHtml(d.id || '-') + '</div>' +
         '<div class="info-row"><strong>접수일시</strong> ' + formatDate(d.createdAt) + '</div>';
@@ -1347,8 +1369,8 @@
       const rC = d.refundDone ? ' checked' : '';
       const eC = d.exchangeDone ? ' checked' : '';
       const iC = d.invalidInfo ? ' checked' : '';
-      const sC = d.sixCansOrMore ? ' checked' : '';
       const callC = d.callComplete ? ' checked' : '';
+      const finalUC = d.finalUnreached ? ' checked' : '';
       const dmLocked = !!(d.refundComplete || d.exchangeComplete);
       const dmLockedAttr = dmLocked ? ' disabled title="처리 완료 건 — 수정 불가"' : '';
       
@@ -1371,12 +1393,11 @@
         '<label><input type="checkbox" id="dm-cb-refund" data-field="refundDone"' + rC + dmLockedAttr + '> 환불</label>' +
         '<label><input type="checkbox" id="dm-cb-exchange" data-field="exchangeDone"' + eC + dmLockedAttr + '> 교환</label>' +
         '<label><input type="checkbox" id="dm-cb-invalid" data-field="invalidInfo"' + iC + dmLockedAttr + '> 잘못된정보</label>' +
-        '<label><input type="checkbox" id="dm-cb-sixCans" data-field="sixCansOrMore"' + sC + '> 6캔이상</label>' +
         '<label><input type="checkbox" id="dm-cb-callComplete" data-field="callComplete"' + callC + '> 유선안내완료</label>' +
+        '<label><input type="checkbox" id="dm-cb-finalUnreached" data-field="finalUnreached"' + finalUC + '> 최종미연결</label>' +
         '<h3 style="margin-top: 16px;">상담이력</h3>' +
         '<textarea id="dm-counseling-history" placeholder="상담이력을 입력하세요.">' + escapeHtml(d.counselingHistory || '') + '</textarea>' +
         '<button type="button" class="btn btn-primary" id="dm-save-history-btn" style="width: auto; margin-top: 8px;">상담이력 저장</button>' +
-        '<p style="font-size:12px;margin-top:8px;color:#555;">환불완료 ' + (d.refundComplete ? 'Y' : '-') + ' / 교환완료 ' + (d.exchangeComplete ? 'Y' : '-') + ' / 증빙오류(반려) ' + (d.proofError ? 'Y' : '-') + (d.proofErrorReason ? ' — ' + escapeHtml(d.proofErrorReason) : '') + '</p>' +
         historyHtml;
       
       document.getElementById('detailModalPhotos').textContent = '사진 불러오는 중…';
@@ -1429,16 +1450,16 @@
       const cbRefund = document.getElementById('dm-cb-refund');
       const cbExchange = document.getElementById('dm-cb-exchange');
       const cbInvalid = document.getElementById('dm-cb-invalid');
-      const cbSix = document.getElementById('dm-cb-sixCans');
       const cbCallComplete = document.getElementById('dm-cb-callComplete');
+      const cbFinalUnreached = document.getElementById('dm-cb-finalUnreached');
       const saveHistoryBtn = document.getElementById('dm-save-history-btn');
       
       const saveFromModal = async () => {
         const refundDone = !!cbRefund?.checked;
         const exchangeDone = !!cbExchange?.checked;
         const invalidInfo = !!cbInvalid?.checked;
-        const sixCansOrMore = !!cbSix?.checked;
         const callComplete = !!cbCallComplete?.checked;
+        const finalUnreached = !!cbFinalUnreached?.checked;
         
         const d = currentDetailData;
         if (!d || !db) return;
@@ -1453,17 +1474,17 @@
           refundDone: d.refundDone || false,
           exchangeDone: d.exchangeDone || false,
           invalidInfo: d.invalidInfo || false,
-          sixCansOrMore: d.sixCansOrMore || false,
-          callComplete: d.callComplete || false
+          callComplete: d.callComplete || false,
+          finalUnreached: d.finalUnreached || false
         };
         
-        const newValues = { refundDone, exchangeDone, invalidInfo, sixCansOrMore, callComplete };
+        const newValues = { refundDone, exchangeDone, invalidInfo, callComplete, finalUnreached };
         const changes = [];
         if (oldValues.refundDone !== newValues.refundDone) changes.push('환불: ' + (newValues.refundDone ? '체크' : '해제'));
         if (oldValues.exchangeDone !== newValues.exchangeDone) changes.push('교환: ' + (newValues.exchangeDone ? '체크' : '해제'));
         if (oldValues.invalidInfo !== newValues.invalidInfo) changes.push('잘못된정보: ' + (newValues.invalidInfo ? '체크' : '해제'));
-        if (oldValues.sixCansOrMore !== newValues.sixCansOrMore) changes.push('6캔이상: ' + (newValues.sixCansOrMore ? '체크' : '해제'));
         if (oldValues.callComplete !== newValues.callComplete) changes.push('유선안내완료: ' + (newValues.callComplete ? '체크' : '해제'));
+        if (oldValues.finalUnreached !== newValues.finalUnreached) changes.push('최종미연결: ' + (newValues.finalUnreached ? '체크' : '해제'));
         
         const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
         const metaPath = dateKey ? (prefix + '/submissions_meta/' + dateKey + '/' + id) : '';
@@ -1513,14 +1534,14 @@
           it.refundDone = newValues.refundDone;
           it.exchangeDone = newValues.exchangeDone;
           it.invalidInfo = newValues.invalidInfo;
-          it.sixCansOrMore = newValues.sixCansOrMore;
           it.callComplete = newValues.callComplete;
+          it.finalUnreached = newValues.finalUnreached;
         }
         // 목업 모드에서는 모달 닫지 않고 체크박스 상태만 유지됨
         // closeDetailModal() 및 renderTable() 호출 제거
       };
       
-      [cbRefund, cbExchange, cbInvalid, cbSix, cbCallComplete].forEach(cb => {
+      [cbRefund, cbExchange, cbInvalid, cbCallComplete, cbFinalUnreached].forEach(cb => {
         if (!cb) return;
         cb.addEventListener('change', saveFromModal);
       });

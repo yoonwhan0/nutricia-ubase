@@ -485,6 +485,19 @@
       return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
+    // 유선안내완료 여부: processing history에서 최신 변경 기준 (체크→해제 시 현재 미완료로 판정)
+    function isCallCompleteForKey(processingHistory) {
+      if (!Array.isArray(processingHistory) || processingHistory.length === 0) return false;
+      const sorted = [...processingHistory].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      for (const h of sorted) {
+        if (h.changes && typeof h.changes === 'string') {
+          if (h.changes.includes('유선안내완료: 체크')) return true;
+          if (h.changes.includes('유선안내완료: 해제')) return false;
+        }
+      }
+      return false;
+    }
+
     function showAdminUI(user) {
       if (adminUserEmailEl) adminUserEmailEl.textContent = user.email || '';
       if (loginLock) loginLock.style.display = 'none';
@@ -634,12 +647,11 @@
           };
         });
 
-        // 분배 이력에서 분배건수 계산 (기간 내 최신 분배만 카운트)
+        // 분배 이력에서 분배건수 계산 (기간 내 접수일 기준, 최신 분배만 카운트)
         const latestDistributionMap = new Map(); // key -> { account, timestamp }
         distributionHistoryMap.forEach((history, key) => {
           if (Array.isArray(history) && history.length > 0) {
             const latest = history[history.length - 1];
-            // 분배된 날짜 기준으로 필터링
             const parts = key.split('_');
             const dateKey = parts[1];
             if (dateKey && /^\d{8}$/.test(dateKey)) {
@@ -648,7 +660,6 @@
               const day = dateKey.substring(6, 8);
               const dateStr = year + '-' + month + '-' + day;
               const itemDate = new Date(dateStr + 'T00:00:00').getTime();
-              
               if (itemDate >= startTime && itemDate <= endTime) {
                 latestDistributionMap.set(key, latest);
               }
@@ -662,27 +673,21 @@
           }
         });
 
-        // 처리내역에서 유선안내완료 통계
-        processingHistoryMap.forEach((history, key) => {
-          if (Array.isArray(history)) {
-            history.forEach(h => {
-              if (h.timestamp >= startTime && h.timestamp <= endTime && accountStats[h.account]) {
-                if (h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')) {
-                  accountStats[h.account].callComplete++;
-                }
-              }
-            });
+        // 유선안내완료 건수: 분배된 각 접수건(key)별로 "현재" 유선안내완료 상태인지 판정 (중복 카운트 방지)
+        latestDistributionMap.forEach((latest, key) => {
+          if (!accountStats[latest.account]) return;
+          const processingHistory = processingHistoryMap.get(key) || [];
+          if (isCallCompleteForKey(processingHistory)) {
+            accountStats[latest.account].callComplete++;
           }
         });
 
-        // 상담이력 통계
-        counselingHistoryMap.forEach((history, key) => {
-          if (Array.isArray(history)) {
-            history.forEach(h => {
-              if (h.timestamp >= startTime && h.timestamp <= endTime && accountStats[h.account]) {
-                accountStats[h.account].counselingHistory++;
-              }
-            });
+        // 상담이력 작성 건수: 분배된 각 접수건별로 1회만 카운트 (중복 방지)
+        latestDistributionMap.forEach((latest, key) => {
+          if (!accountStats[latest.account]) return;
+          const counselingHistory = counselingHistoryMap.get(key) || [];
+          if (Array.isArray(counselingHistory) && counselingHistory.length > 0) {
+            accountStats[latest.account].counselingHistory++;
           }
         });
 
@@ -810,9 +815,7 @@
             const completedCount = items.filter(item => {
               const key = `${item._prefix}_${item._dateKey}_${item.id}`;
               const processingHistory = processingHistoryMap.get(key) || [];
-              return Array.isArray(processingHistory) && processingHistory.some(h => 
-                h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')
-              );
+              return isCallCompleteForKey(processingHistory);
             }).length;
             const remainingCount = items.length - completedCount;
             
@@ -879,9 +882,7 @@
             const uncompletedItems = fromItems.filter(item => {
               const key = `${item._prefix}_${item._dateKey}_${item.id}`;
               const processingHistory = processingHistoryMap.get(key) || [];
-              return !Array.isArray(processingHistory) || !processingHistory.some(h => 
-                h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')
-              );
+              return !isCallCompleteForKey(processingHistory);
             });
             
             if (uncompletedItems.length === 0) {
@@ -1087,9 +1088,7 @@
         const completedCount = items.filter(item => {
           const key = `${item._prefix}_${item._dateKey}_${item.id}`;
           const processingHistory = processingHistoryMap.get(key) || [];
-          return Array.isArray(processingHistory) && processingHistory.some(h => 
-            h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')
-          );
+          return isCallCompleteForKey(processingHistory);
         }).length;
         const remainingCount = items.length - completedCount;
 
@@ -1145,9 +1144,7 @@
           const uncompletedItems = fromItems.filter(item => {
             const key = `${item._prefix}_${item._dateKey}_${item.id}`;
             const processingHistory = processingHistoryMap.get(key) || [];
-            return !Array.isArray(processingHistory) || !processingHistory.some(h => 
-              h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')
-            );
+            return !isCallCompleteForKey(processingHistory);
           });
           closeModal();
           openBulkReassignModal(fromAccount, uncompletedItems);
@@ -1265,9 +1262,7 @@
               
               // 처리완료 여부 확인
               const processingHistory = processingHistoryMap.get(key) || [];
-              const isCompleted = Array.isArray(processingHistory) && processingHistory.some(h => 
-                h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')
-              );
+              const isCompleted = isCallCompleteForKey(processingHistory);
               
               if (isCompleted) {
                 accountRemaining[account].completed++;
@@ -1318,9 +1313,7 @@
             const remainingItems = accountRemaining[fromAccount].items.filter(item => {
               const key = `${item._prefix}_${item._dateKey}_${item.id}`;
               const processingHistory = processingHistoryMap.get(key) || [];
-              return !Array.isArray(processingHistory) || !processingHistory.some(h => 
-                h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')
-              );
+              return !isCallCompleteForKey(processingHistory);
             });
             openTransferModal(fromAccount, remainingItems);
           });
@@ -1391,9 +1384,7 @@
 
                 // 처리완료 여부 확인
                 const processingHistory = processingHistoryMap.get(key) || [];
-                const isCompleted = Array.isArray(processingHistory) && processingHistory.some(h => 
-                  h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')
-                );
+                const isCompleted = isCallCompleteForKey(processingHistory);
                 if (isCompleted) {
                   historyByDate[dateKey][account].completed++;
                 }
