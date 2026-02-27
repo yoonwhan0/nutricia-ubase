@@ -396,7 +396,8 @@
     import {
       getDatabase,
       ref as dbRef,
-      get
+      get,
+      set
     } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
     import {
       getAuth,
@@ -498,36 +499,38 @@
     statsStartDate.value = today.toISOString().split('T')[0];
     statsEndDate.value = today.toISOString().split('T')[0];
 
-    // 로컬 스토리지: 분배 이력 저장 (목업용 - 대시보드가 관리)
-    // key: `${prefix}_${dateKey}_${id}` -> [{ account, timestamp, type: 'assign' | 'reassign' | 'complete' }]
-    // 분배 이력은 대시보드가 관리하고, CS 계정은 읽기만 함
-    function loadDistributionHistoryFromStorage() {
-      const stored = localStorage.getItem('outbound_dashboard_distribution_history');
-      if (stored) {
-        try {
-          return new Map(JSON.parse(stored));
-        } catch (e) {
-          return new Map();
-        }
+    const DISTRIBUTION_PATH = 'outbound_distribution/assignments';
+    // 분배 이력: Firebase 저장 (대시보드가 관리, CS는 읽기만)
+    async function loadDistributionHistoryFromFirebase() {
+      if (!db) return new Map();
+      try {
+        const snap = await get(dbRef(db, DISTRIBUTION_PATH));
+        if (!snap.exists()) return new Map();
+        const data = snap.val();
+        if (!data || typeof data !== 'object') return new Map();
+        return new Map(Object.entries(data));
+      } catch (e) {
+        console.error('분배 이력 로드 실패:', e);
+        return new Map();
       }
-      return new Map();
     }
 
-    function saveDistributionHistoryToStorage(map) {
+    async function saveDistributionHistoryToFirebase(map) {
+      if (!db) return;
       try {
-        const array = Array.from(map.entries());
-        localStorage.setItem('outbound_dashboard_distribution_history', JSON.stringify(array));
+        const obj = Object.fromEntries(map);
+        await set(dbRef(db, DISTRIBUTION_PATH), obj);
       } catch (e) {
         console.error('분배 이력 저장 실패:', e);
       }
     }
 
     // 계정별 회수: 해당 상담사에게 배정된 건을 모두 미분배로
-    function recallDistributionByAccount(account) {
+    async function recallDistributionByAccount(account) {
       if (!account || !confirm(account + '에게 배정된 건을 모두 회수하시겠습니까?\n\n해당 상담사의 목록에서 사라지며, 미분배 풀로 돌아갑니다.')) {
         return;
       }
-      distributionHistoryMap = loadDistributionHistoryFromStorage();
+      distributionHistoryMap = await loadDistributionHistoryFromFirebase();
       let recallCount = 0;
       const keysToRemove = [];
       distributionHistoryMap.forEach((history, key) => {
@@ -539,7 +542,7 @@
         }
       });
       keysToRemove.forEach((k) => distributionHistoryMap.delete(k));
-      saveDistributionHistoryToStorage(distributionHistoryMap);
+      await saveDistributionHistoryToFirebase(distributionHistoryMap);
       console.log('[목업] 계정별 회수:', { account, recallCount });
       alert(account + ' 배정 ' + recallCount + '건을 회수했습니다.');
 
@@ -551,12 +554,12 @@
     }
 
     // 전체 초기화: 분배 이력 전체 삭제 (모든 상담사 배정 회수)
-    function resetDistribution() {
+    async function resetDistribution() {
       if (!confirm('모든 상담사의 배정을 회수하시겠습니까?\n\n전체 접수건이 미분배 상태로 돌아가며, 상담원 페이지 목록도 비워집니다.')) {
         return;
       }
       distributionHistoryMap = new Map();
-      saveDistributionHistoryToStorage(distributionHistoryMap);
+      await saveDistributionHistoryToFirebase(distributionHistoryMap);
       console.log('[목업] 분배 이력 초기화 완료');
       alert('전체 배정이 회수되었습니다.');
 
@@ -609,7 +612,7 @@
       }
     }
 
-    let distributionHistoryMap = loadDistributionHistoryFromStorage();
+    let distributionHistoryMap = new Map();
     let processingHistoryMap = new Map();
     let counselingHistoryMap = new Map();
     let allSubmissions = [];
@@ -769,7 +772,7 @@
         const startTime = new Date(startDate + 'T00:00:00').getTime();
         const endTime = new Date(endDate + 'T23:59:59').getTime();
 
-        distributionHistoryMap = loadDistributionHistoryFromStorage();
+        distributionHistoryMap = await loadDistributionHistoryFromFirebase();
         await loadProcessingAndCounselingFromFirebase();
 
         // 상담사별 통계: 총/미특정/증빙오류 각각 분배건·처리건
@@ -880,7 +883,7 @@
         }
 
         // 분배 상태 확인 (localStorage에서 최신 로드)
-        distributionHistoryMap = loadDistributionHistoryFromStorage();
+        distributionHistoryMap = await loadDistributionHistoryFromFirebase();
         await loadProcessingAndCounselingFromFirebase();
         
         const distributionMap = new Map();
@@ -1038,7 +1041,7 @@
         return;
       }
 
-      distributionHistoryMap = loadDistributionHistoryFromStorage();
+      distributionHistoryMap = await loadDistributionHistoryFromFirebase();
 
       // 드롭다운 필터에 따라 미분배 접수건 필터링
       const unassigned = allSubmissions.filter(item => {
@@ -1108,7 +1111,7 @@
         }
       });
 
-      saveDistributionHistoryToStorage(distributionHistoryMap);
+      await saveDistributionHistoryToFirebase(distributionHistoryMap);
       alert('균등 분배가 완료되었습니다.');
       loadDistribution(filterType);
     }
@@ -1137,7 +1140,7 @@
     }
 
     // 분배 확인
-    assignModalConfirmBtn.addEventListener('click', () => {
+    assignModalConfirmBtn.addEventListener('click', async () => {
       const key = assignModal.getAttribute('data-key');
       const account = assignAccountSelect.value;
       const isReassign = assignModal.getAttribute('data-reassign') === 'true';
@@ -1148,6 +1151,7 @@
         return;
       }
 
+      distributionHistoryMap = await loadDistributionHistoryFromFirebase();
       if (!distributionHistoryMap.has(key)) {
         distributionHistoryMap.set(key, []);
       }
@@ -1159,7 +1163,7 @@
         category: category // 카테고리 정보 저장
       });
 
-      saveDistributionHistoryToStorage(distributionHistoryMap);
+      await saveDistributionHistoryToFirebase(distributionHistoryMap);
       closeAssignModal();
       const cat = assignModal.getAttribute('data-category') || 'noCheck';
       loadDistribution(cat);
@@ -1179,7 +1183,7 @@
         return;
       }
 
-      distributionHistoryMap = loadDistributionHistoryFromStorage();
+      distributionHistoryMap = await loadDistributionHistoryFromFirebase();
       await loadProcessingAndCounselingFromFirebase();
       
       const distributionMap = new Map();
@@ -1296,7 +1300,7 @@
     }
 
     // 대량 재분배 모달 (filterType: 'noCheck' | 'proofError' — 완료 후 해당 유형만 재조회)
-    function openBulkReassignModal(fromAccount, items, filterType) {
+    async function openBulkReassignModal(fromAccount, items, filterType) {
       const count = prompt(fromAccount + '의 미처리 건 ' + items.length + '건 중 몇 건을 재분배하시겠습니까?');
       const transferCount = parseInt(count) || 0;
       
@@ -1318,7 +1322,7 @@
       }
 
       // 재분배 처리
-      distributionHistoryMap = loadDistributionHistoryFromStorage();
+      distributionHistoryMap = await loadDistributionHistoryFromFirebase();
       const itemsToTransfer = items.slice(0, transferCount);
       
       itemsToTransfer.forEach(item => {
@@ -1337,7 +1341,7 @@
         });
       });
 
-      saveDistributionHistoryToStorage(distributionHistoryMap);
+      await saveDistributionHistoryToFirebase(distributionHistoryMap);
       alert('재분배가 완료되었습니다.');
       if (filterType) {
         loadDistribution(filterType);
@@ -1358,7 +1362,7 @@
       remainingResult.innerHTML = '';
 
       try {
-        distributionHistoryMap = loadDistributionHistoryFromStorage();
+        distributionHistoryMap = await loadDistributionHistoryFromFirebase();
         await loadProcessingAndCounselingFromFirebase();
 
         // 모든 접수 데이터 로드 (최근 30일)
@@ -1516,7 +1520,7 @@
         const startTime = new Date(startDate + 'T00:00:00').getTime();
         const endTime = new Date(endDate + 'T23:59:59').getTime();
 
-        distributionHistoryMap = loadDistributionHistoryFromStorage();
+        distributionHistoryMap = await loadDistributionHistoryFromFirebase();
         await loadProcessingAndCounselingFromFirebase();
 
         // 날짜별·상담사별: 총/미특정/증빙오류 각각 분배건·처리건
@@ -1595,7 +1599,7 @@
     }
 
     // 이관 모달: 유형별 건수 표시 후 확인
-    function openTransferModal(fromAccount, items) {
+    async function openTransferModal(fromAccount, items) {
       if (!items || items.length === 0) {
         alert('이관할 잔여건이 없습니다.');
         return;
@@ -1629,7 +1633,7 @@
         return;
       }
 
-      distributionHistoryMap = loadDistributionHistoryFromStorage();
+      distributionHistoryMap = await loadDistributionHistoryFromFirebase();
       items.forEach(item => {
         const key = `${item._prefix}_${item._dateKey}_${item.id}`;
         if (!distributionHistoryMap.has(key)) distributionHistoryMap.set(key, []);
@@ -1643,7 +1647,7 @@
         });
       });
 
-      saveDistributionHistoryToStorage(distributionHistoryMap);
+      await saveDistributionHistoryToFirebase(distributionHistoryMap);
       alert('이관이 완료되었습니다.');
       loadRemaining();
       loadDistribution('noCheck');

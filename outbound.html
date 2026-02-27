@@ -445,21 +445,24 @@
       }
     }
 
-    // 분배 이력은 대시보드가 관리하고, CS 계정은 읽기만 함
-    function loadDistributionHistoryFromStorage() {
-      const stored = localStorage.getItem('outbound_dashboard_distribution_history');
-      if (stored) {
-        try {
-          return new Map(JSON.parse(stored));
-        } catch (e) {
-          return new Map();
-        }
+    const DISTRIBUTION_PATH = 'outbound_distribution/assignments';
+    // 분배 이력: Firebase에서 로드 (대시보드가 관리, CS는 읽기만)
+    async function loadDistributionHistoryFromFirebase() {
+      if (!db) return new Map();
+      try {
+        const snap = await get(dbRef(db, DISTRIBUTION_PATH));
+        if (!snap.exists()) return new Map();
+        const data = snap.val();
+        if (!data || typeof data !== 'object') return new Map();
+        return new Map(Object.entries(data));
+      } catch (e) {
+        console.error('분배 이력 로드 오류:', e);
+        return new Map();
       }
-      return new Map();
     }
 
     let processingHistoryMap = new Map();
-    let distributionHistoryMap = loadDistributionHistoryFromStorage();
+    let distributionHistoryMap = new Map();
 
     // 유선안내완료 여부: processing history에서 최신 변경 기준 (체크→해제 시 현재 미완료로 판정)
     function isCallCompleteForKey(processingHistory) {
@@ -538,12 +541,17 @@
       listView.style.display = 'block';
       currentUserEmail = user.email || '';
       if (adminUserEmailEl) adminUserEmailEl.textContent = currentUserEmail;
+      subscribeDistributionHistory();
       doLoad();
     }
     function showLoginUI() {
       if (adminLock) adminLock.style.display = 'flex';
       listView.style.display = 'none';
       if (adminLockError) adminLockError.textContent = '';
+      if (distributionUnsubscribe) {
+        distributionUnsubscribe();
+        distributionUnsubscribe = null;
+      }
     }
 
     onAuthStateChanged(auth, (user) => {
@@ -626,21 +634,28 @@
         if (Object.keys(metaSnaps).length === 0) {
           loadMetaOnce();
         } else {
-          distributionHistoryMap = loadDistributionHistoryFromStorage();
           renderTable();
         }
       }
     });
 
-    // 대시보드에서 분배 시 localStorage 변경 감지 → 목록 자동 갱신 (다른 탭에서 분배해도 로컬에서 즉시 반영)
-    window.addEventListener('storage', (e) => {
-      if (e.key === 'outbound_dashboard_distribution_history' && listView && listView.style.display !== 'none') {
-        distributionHistoryMap = loadDistributionHistoryFromStorage();
-        if (Object.keys(metaSnaps).length === PREFIXES.length) {
+    // 대시보드에서 분배 시 Firebase 실시간 반영
+    let distributionUnsubscribe = null;
+    function subscribeDistributionHistory() {
+      if (!db) return;
+      if (distributionUnsubscribe) distributionUnsubscribe();
+      distributionUnsubscribe = onValue(dbRef(db, DISTRIBUTION_PATH), (snap) => {
+        if (!snap.exists()) {
+          distributionHistoryMap = new Map();
+        } else {
+          const data = snap.val();
+          distributionHistoryMap = new Map(Object.entries(data || {}));
+        }
+        if (listView && listView.style.display !== 'none' && Object.keys(metaSnaps).length === PREFIXES.length) {
           renderTable();
         }
-      }
-    });
+      });
+    }
 
     function formatDate(t) {
       if (!t) return '-';
@@ -703,6 +718,7 @@
           const snap = await get(dbRef(db, prefix + '/submissions_meta'));
           metaSnaps[prefix] = snap;
         }
+        distributionHistoryMap = await loadDistributionHistoryFromFirebase();
         await loadProcessingHistoryFromFirebase();
         applyMetaAndRender();
       } catch (err) {
@@ -714,9 +730,8 @@
     function getFilteredItems() {
       let base = allItems;
       
-      // 아웃바운드 상담원은 본인에게 분배된 건만 보여야 함
+      // 아웃바운드 상담원은 본인에게 분배된 건만 보여야 함 (distributionHistoryMap은 Firebase에서 로드/실시간 갱신)
       if (currentUserEmail && ALLOWED_EMAILS.some(e => e.toLowerCase() === currentUserEmail.toLowerCase())) {
-        distributionHistoryMap = loadDistributionHistoryFromStorage();
         base = base.filter((d) => {
           const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
           const history = distributionHistoryMap.get(key) || [];
