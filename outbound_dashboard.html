@@ -262,6 +262,19 @@
 
     <!-- 탭1: 물량 분배 (유형별 분리) -->
     <div id="tab-distribution" class="dashboard-tab-content active">
+    <div class="dashboard-card" style="margin-bottom: 20px; padding: 16px; background: #f0f7ff; border: 1px solid #b3d4fc; border-radius: 8px;">
+      <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #1a1a1a;">📌 분배 규칙 안내</h3>
+      <p style="margin: 0 0 12px 0; font-size: 12px; color: #333; line-height: 1.6;">
+        <strong>① 환불/교환 미체크</strong> — 아래 조건을 <u>모두</u> 만족하는 건만 분배 대상입니다.<br>
+        · 환불 미체크 AND 교환 미체크<br>
+        · 증빙오류 아님<br>
+        · 잘못된정보 미체크 (잘못된정보 = 유선안내 완료·재접수 예정이므로 제외)<br>
+        · 아직 분배되지 않은 건<br><br>
+        <strong>② 증빙오류(반려)</strong> — 아래 조건을 만족하는 건만 분배 대상입니다.<br>
+        · 증빙오류(반려) 체크된 건<br>
+        · 아직 분배되지 않은 건
+      </p>
+    </div>
     <div class="distribution-account-select" style="margin-bottom: 20px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e0e0e0;">
       <div style="font-size: 12px; font-weight: 600; margin-bottom: 8px; color: #555;">📌 자동 분배할 상담사 (체크한 계정에게만 균등 분배)</div>
       <div style="display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center;">
@@ -274,7 +287,7 @@
     <div class="dashboard-section">
       <div class="dashboard-card" style="border-left: 4px solid #17a;">
         <h3 class="card-group-title">환불/교환 미체크 — 조회 및 분배</h3>
-        <p class="hint">환불·교환 체크가 안 된 접수건을 조회하고 상담사에게 분배합니다.</p>
+        <p class="hint">환불·교환 체크가 안 된 접수건을 조회하고 상담사에게 분배합니다. (잘못된정보 체크된 건은 유선안내 완료·재접수 예정이므로 분배 제외)</p>
         <div class="toolbar">
           <button type="button" class="load-dist-btn" data-type="noCheck">전체 조회</button>
           <button type="button" class="auto-dist-btn" data-type="noCheck" style="background: #ffc107; color: #333;">자동 균등 분배</button>
@@ -984,10 +997,12 @@
           
           // 필터 타입에 따라 필터링
           if (filterType === 'noCheck') {
-            // 환불/교환 체크 안 된 건만 (증빙오류 아님)
+            // 환불/교환 체크 안 된 건만 (증빙오류 아님, 잘못된정보 아님)
+            // 잘못된정보 체크 시 유선안내 완료 후 재접수 예정이므로 분배 제외
             const isNotChecked = !item.refundDone && !item.exchangeDone;
             const isNotProofError = !item.proofError;
-            return !isAssigned && isNotChecked && isNotProofError;
+            const isNotInvalidInfo = !item.invalidInfo;
+            return !isAssigned && isNotChecked && isNotProofError && isNotInvalidInfo;
           } else if (filterType === 'proofError') {
             // 증빙오류(반려) 건만
             return !isAssigned && !!item.proofError;
@@ -1169,7 +1184,8 @@
         if (filterType === 'noCheck') {
           const isNotChecked = !item.refundDone && !item.exchangeDone;
           const isNotProofError = !item.proofError;
-          return !isAssigned && isNotChecked && isNotProofError;
+          const isNotInvalidInfo = !item.invalidInfo; // 잘못된정보 = 유선안내 완료·재접수 예정 → 분배 제외
+          return !isAssigned && isNotChecked && isNotProofError && isNotInvalidInfo;
         } else if (filterType === 'proofError') {
           return !isAssigned && !!item.proofError;
         }
