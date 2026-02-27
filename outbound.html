@@ -276,14 +276,14 @@
         <div class="admin-search" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px;">
           <label style="font-size: 12px;">구분:</label>
           <select id="viewFilterSelect" style="padding: 6px 8px; font-size: 12px;">
-            <option value="noCallComplete">유선안내 미완료</option>
-            <option value="callComplete">유선안내완료</option>
+            <option value="noCallComplete">유선안내 미완료 (해야 할 일)</option>
+            <option value="callComplete">내가 처리한 건</option>
             <option value="finalUnreached">최종미연결</option>
-            <option value="all">전체</option>
+            <option value="all">전체 (배정된 건)</option>
             <option value="proofError">증빙오류(반려)</option>
             <option value="noRefundExchange">환불·교환 모두 미체크 (접수시)</option>
           </select>
-          <span style="font-size: 11px; color: #666;">선택한 구분만 목록에 표시됩니다.</span>
+          <span id="csSectionSummary" style="font-size: 12px; font-weight: 600; color: #17a; margin-left: 12px;"></span>
         </div>
         <h2 style="font-size: 14px; margin: 0 0 8px 0;">고객 조회</h2>
         <div class="admin-search" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
@@ -494,6 +494,18 @@
         }
       }
       return false;
+    }
+    // 유선안내완료 체크한 상담사(처리한 사람) 반환. 체크된 경우 해당 account, 미체크면 null
+    function getProcessedByAccount(processingHistory) {
+      if (!Array.isArray(processingHistory) || processingHistory.length === 0) return null;
+      const sorted = [...processingHistory].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      for (const h of sorted) {
+        if (h.changes && typeof h.changes === 'string') {
+          if (h.changes.includes('유선안내완료: 체크')) return (h.account || '').trim() || null;
+          if (h.changes.includes('유선안내완료: 해제')) return null;
+        }
+      }
+      return null;
     }
 
     function normalizePhone(v) {
@@ -734,18 +746,42 @@
       if (refreshBtn) refreshBtn.disabled = false;
     }
 
+    function isCsAccount() {
+      return !!(currentUserEmail && ALLOWED_EMAILS.some(e => e.toLowerCase() === currentUserEmail.toLowerCase()));
+    }
+    function getMyAssignedItems() {
+      return allItems.filter((d) => {
+        const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
+        const history = distributionHistoryMap.get(key) || [];
+        if (!Array.isArray(history) || history.length === 0) return false;
+        const latest = history[history.length - 1];
+        return latest && latest.account && latest.account.toLowerCase() === currentUserEmail.toLowerCase();
+      });
+    }
+    function getMyUnprocessedItems() {
+      return getMyAssignedItems().filter((d) => {
+        const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
+        const ph = processingHistoryMap.get(key) || [];
+        return !(ph.length > 0 ? isCallCompleteForKey(ph) : !!d.callComplete);
+      });
+    }
+    function getMyProcessedItems() {
+      const email = (currentUserEmail || '').toLowerCase();
+      if (!email) return [];
+      return getMyAssignedItems().filter((d) => {
+        const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
+        const ph = processingHistoryMap.get(key) || [];
+        const processedBy = getProcessedByAccount(ph);
+        return processedBy && processedBy.toLowerCase() === email;
+      });
+    }
+
     function getFilteredItems() {
       let base = allItems;
       
       // 아웃바운드 상담원은 본인에게 분배된 건만 보여야 함 (distributionHistoryMap은 Firebase에서 로드/실시간 갱신)
-      if (currentUserEmail && ALLOWED_EMAILS.some(e => e.toLowerCase() === currentUserEmail.toLowerCase())) {
-        base = base.filter((d) => {
-          const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
-          const history = distributionHistoryMap.get(key) || [];
-          if (!Array.isArray(history) || history.length === 0) return false;
-          const latest = history[history.length - 1];
-          return latest && latest.account && latest.account.toLowerCase() === currentUserEmail.toLowerCase();
-        });
+      if (isCsAccount()) {
+        base = getMyAssignedItems();
       }
 
       // processing history 기반 판정 (Firebase에서 로드)
@@ -755,19 +791,27 @@
         } else if (viewFilter === 'noRefundExchange') {
           base = base.filter((d) => !d.refundDone && !d.exchangeDone);
         } else if (viewFilter === 'noCallComplete') {
-          base = base.filter((d) => {
-            const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
-            const ph = processingHistoryMap.get(key) || [];
-            const complete = ph.length > 0 ? isCallCompleteForKey(ph) : (!!d.callComplete);
-            return !complete;
-          });
+          if (isCsAccount()) {
+            base = getMyUnprocessedItems();
+          } else {
+            base = base.filter((d) => {
+              const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
+              const ph = processingHistoryMap.get(key) || [];
+              const complete = ph.length > 0 ? isCallCompleteForKey(ph) : (!!d.callComplete);
+              return !complete;
+            });
+          }
         } else if (viewFilter === 'callComplete') {
-          base = base.filter((d) => {
-            const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
-            const ph = processingHistoryMap.get(key) || [];
-            const complete = ph.length > 0 ? isCallCompleteForKey(ph) : (!!d.callComplete);
-            return complete;
-          });
+          if (isCsAccount()) {
+            base = getMyProcessedItems();
+          } else {
+            base = base.filter((d) => {
+              const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
+              const ph = processingHistoryMap.get(key) || [];
+              const complete = ph.length > 0 ? isCallCompleteForKey(ph) : (!!d.callComplete);
+              return complete;
+            });
+          }
         } else if (viewFilter === 'finalUnreached') {
           base = base.filter((d) => {
             const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
@@ -963,11 +1007,18 @@
       listEl.innerHTML = tableHtml + paginationHtml;
       const infoP = document.createElement('p');
       infoP.className = 'msg info';
-      const filterLabels = { all: '', proofError: '증빙오류(반려)', noRefundExchange: '환불·교환 미체크', callComplete: '유선안내완료', noCallComplete: '유선안내 미완료', finalUnreached: '최종미연결' };
+      const filterLabels = { all: '', proofError: '증빙오류(반려)', noRefundExchange: '환불·교환 미체크', callComplete: '내가 처리한 건', noCallComplete: '유선안내 미완료', finalUnreached: '최종미연결' };
       const filterLabel = filterLabels[viewFilter] || '';
       const baseMsg = (searchFilters.name || searchFilters.contact || searchFilters.customsCode || searchFilters.uniqueCode) ? ('검색 결과 ' + total + '건 (전체 ' + allItems.length + '건 중)') : (filterLabel ? '[' + filterLabel + '] ' + total + '건' : '전체 ' + total + '건');
       infoP.textContent = baseMsg + ', 페이지당 30건. 상세에서 고객정보·제품·체크박스·상담이력·처리내역 확인·수정.';
       listEl.insertBefore(infoP, listEl.firstChild);
+
+      if (isCsAccount()) {
+        const unproc = getMyUnprocessedItems();
+        const proc = getMyProcessedItems();
+        const csSummary = document.getElementById('csSectionSummary');
+        if (csSummary) csSummary.textContent = '📋 미처리 ' + unproc.length + '건 | ✅ 내가 처리한 건 ' + proc.length + '건';
+      }
 
       listEl.querySelectorAll('.admin-page-btn').forEach((btn) => {
         btn.addEventListener('click', (e) => {

@@ -302,14 +302,14 @@
 
     <div class="dashboard-section">
       <div class="toolbar">
-        <button type="button" id="resetDistributionBtn" style="background: #666; color: #fff;" title="모든 상담사의 배정을 일괄 회수">전체 분배 초기화</button>
+        <button type="button" id="resetDistributionBtn" style="background: #666; color: #fff;" title="미처리 건만 회수 (처리완료 건은 처리자에게 유지)">전체 분배 초기화</button>
       </div>
     </div>
 
     <div class="dashboard-section">
       <div class="dashboard-card">
         <h3 class="card-group-title">2. 상담사별 잔여건 및 이관</h3>
-        <p class="hint">분배된 미처리 건을 확인하고, 실적이 떨어지는 상담사의 잔여건을 다른 상담사에게 이관할 수 있습니다.</p>
+        <p class="hint">분배된 미처리 건을 확인하고 이관할 수 있습니다. (통계와 동일한 기준 — 분배 전체)</p>
         <div class="toolbar">
           <button type="button" id="loadRemainingBtn">잔여건 조회</button>
         </div>
@@ -324,12 +324,13 @@
     <div class="dashboard-section">
       <div class="dashboard-card">
         <h3 class="card-group-title">상담사별 실적·분배 이력</h3>
-        <p class="hint">기간을 선택해 상담사별 분배·처리 현황을 조회합니다. 상담사별 요약 또는 날짜별 상세 보기를 선택할 수 있습니다.</p>
+        <p class="hint">기간을 선택해 상담사별 분배·처리 현황을 조회합니다. (접수일 기준) 비워두면 전체 조회. 상담사별 요약 또는 날짜별 상세 보기를 선택할 수 있습니다.</p>
         <div class="toolbar">
-          <label>기간:</label>
-          <input type="date" id="statsStartDate" value="">
+          <label><input type="checkbox" id="statsDateAll" checked> 전체</label>
+          <label style="margin-left:8px;">기간:</label>
+          <input type="date" id="statsStartDate" value="" disabled>
           <span>~</span>
-          <input type="date" id="statsEndDate" value="">
+          <input type="date" id="statsEndDate" value="" disabled>
           <label style="margin-left: 12px;">상담사:</label>
           <select id="historyAccountSelect">
             <option value="">전체</option>
@@ -494,10 +495,25 @@
       });
     }
 
-    // 오늘 날짜로 초기화
-    const today = new Date();
-    statsStartDate.value = today.toISOString().split('T')[0];
-    statsEndDate.value = today.toISOString().split('T')[0];
+    // 통계 기본값: 전체 (날짜 비움)
+    const statsDateAllCb = document.getElementById('statsDateAll');
+    function syncStatsDateAll() {
+      const all = statsDateAllCb && statsDateAllCb.checked;
+      if (statsStartDate) statsStartDate.disabled = !!all;
+      if (statsEndDate) statsEndDate.disabled = !!all;
+      if (all) {
+        statsStartDate.value = '';
+        statsEndDate.value = '';
+      } else if (statsStartDate && statsEndDate && !statsStartDate.value) {
+        const today = new Date();
+        const monthAgo = new Date(today);
+        monthAgo.setDate(monthAgo.getDate() - 30);
+        statsStartDate.value = monthAgo.toISOString().split('T')[0];
+        statsEndDate.value = today.toISOString().split('T')[0];
+      }
+    }
+    if (statsDateAllCb) statsDateAllCb.addEventListener('change', syncStatsDateAll);
+    syncStatsDateAll();
 
     const DISTRIBUTION_PATH = 'outbound_distribution/assignments';
     // 분배 이력: Firebase 저장 (대시보드가 관리, CS는 읽기만)
@@ -535,26 +551,31 @@
       }
     }
 
-    // 계정별 회수: 해당 상담사에게 배정된 건을 모두 미분배로
+    // 계정별 회수: 해당 상담사에게 배정된 건 중 미처리 건만 회수 (처리완료 건은 그대로 유지)
     async function recallDistributionByAccount(account) {
-      if (!account || !confirm(account + '에게 배정된 건을 모두 회수하시겠습니까?\n\n해당 상담사의 목록에서 사라지며, 미분배 풀로 돌아갑니다.')) {
+      if (!account || !confirm(account + '에게 배정된 미처리 건을 회수하시겠습니까?\n\n※ 해당 상담사가 이미 처리(유선안내완료)한 건은 회수되지 않고 유지됩니다.')) {
         return;
       }
       distributionHistoryMap = await loadDistributionHistoryFromFirebase();
+      await loadProcessingAndCounselingFromFirebase();
       let recallCount = 0;
       const keysToRemove = [];
       distributionHistoryMap.forEach((history, key) => {
         if (!Array.isArray(history) || history.length === 0) return;
         const latest = history[history.length - 1];
         if (latest && latest.account && latest.account.toLowerCase() === account.toLowerCase()) {
+          const ph = processingHistoryMap.get(key) || [];
+          const processedBy = getProcessedByAccount(ph);
+          if (processedBy && processedBy.toLowerCase() === account.toLowerCase()) {
+            return;
+          }
           keysToRemove.push(key);
           recallCount++;
         }
       });
       keysToRemove.forEach((k) => distributionHistoryMap.delete(k));
       await saveDistributionHistoryToFirebase(distributionHistoryMap);
-      console.log('[목업] 계정별 회수:', { account, recallCount });
-      alert(account + ' 배정 ' + recallCount + '건을 회수했습니다.');
+      alert(account + ' 미처리 배정 ' + recallCount + '건을 회수했습니다. (처리완료 건은 유지)');
 
       await loadDistribution('noCheck');
       await loadDistribution('proofError');
@@ -563,15 +584,27 @@
       loadStats();
     }
 
-    // 전체 초기화: 분배 이력 전체 삭제 (모든 상담사 배정 회수)
+    // 전체 초기화: 미처리 건만 회수 (처리완료 건은 처리한 상담사에게 유지)
     async function resetDistribution() {
-      if (!confirm('모든 상담사의 배정을 회수하시겠습니까?\n\n전체 접수건이 미분배 상태로 돌아가며, 상담원 페이지 목록도 비워집니다.')) {
+      if (!confirm('미처리 건만 회수하시겠습니까?\n\n※ 각 상담사가 이미 처리(유선안내완료)한 건은 해당 상담사에게 그대로 유지됩니다.')) {
         return;
       }
-      distributionHistoryMap = new Map();
-      await saveDistributionHistoryToFirebase(distributionHistoryMap);
-      console.log('[목업] 분배 이력 초기화 완료');
-      alert('전체 배정이 회수되었습니다.');
+      distributionHistoryMap = await loadDistributionHistoryFromFirebase();
+      await loadProcessingAndCounselingFromFirebase();
+      const newMap = new Map();
+      distributionHistoryMap.forEach((history, key) => {
+        if (!Array.isArray(history) || history.length === 0) return;
+        const latest = history[history.length - 1];
+        const ph = processingHistoryMap.get(key) || [];
+        const processedBy = getProcessedByAccount(ph);
+        if (processedBy) {
+          newMap.set(key, history);
+        }
+      });
+      await saveDistributionHistoryToFirebase(newMap);
+      const kept = newMap.size;
+      const removed = distributionHistoryMap.size - kept;
+      alert('미처리 ' + removed + '건 회수 완료. 처리완료 ' + kept + '건은 처리자에게 유지됩니다.');
 
       await loadDistribution('noCheck');
       await loadDistribution('proofError');
@@ -655,7 +688,18 @@
       }
       return false;
     }
-
+    // 유선안내완료 체크한 상담사(처리한 사람) 반환. 체크된 경우 해당 account, 미체크면 null
+    function getProcessedByAccount(processingHistory) {
+      if (!Array.isArray(processingHistory) || processingHistory.length === 0) return null;
+      const sorted = [...processingHistory].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      for (const h of sorted) {
+        if (h.changes && typeof h.changes === 'string') {
+          if (h.changes.includes('유선안내완료: 체크')) return (h.account || '').trim() || null;
+          if (h.changes.includes('유선안내완료: 해제')) return null;
+        }
+      }
+      return null;
+    }
     function showAdminUI(user) {
       if (adminUserEmailEl) adminUserEmailEl.textContent = user.email || '';
       if (loginLock) loginLock.style.display = 'none';
@@ -777,11 +821,12 @@
         return;
       }
 
+      const useDateFilter = !(statsDateAllCb && statsDateAllCb.checked);
       const startDate = statsStartDate.value;
       const endDate = statsEndDate.value;
 
-      if (!startDate || !endDate) {
-        statsResult.innerHTML = '<div class="msg error">기간을 선택해주세요.</div>';
+      if (useDateFilter && (!startDate || !endDate)) {
+        statsResult.innerHTML = '<div class="msg error">전체가 아닐 경우 기간을 선택해주세요.</div>';
         return;
       }
 
@@ -790,8 +835,11 @@
       downloadStatsBtn.style.display = 'none';
 
       try {
-        const startTime = new Date(startDate + 'T00:00:00').getTime();
-        const endTime = new Date(endDate + 'T23:59:59').getTime();
+        let startTime = 0, endTime = Number.MAX_SAFE_INTEGER;
+        if (useDateFilter && startDate && endDate) {
+          startTime = new Date(startDate + 'T00:00:00').getTime();
+          endTime = new Date(endDate + 'T23:59:59').getTime();
+        }
 
         distributionHistoryMap = await loadDistributionHistoryFromFirebase();
         await loadProcessingAndCounselingFromFirebase();
@@ -831,15 +879,18 @@
           if (entry._category === 'noCheck') acc.noCheckDist++;
           else acc.proofErrorDist++;
 
-          const processingHistory = processingHistoryMap.get(key) || [];
-          if (isCallCompleteForKey(processingHistory)) {
+          const ph = processingHistoryMap.get(key) || [];
+          const processedBy = getProcessedByAccount(ph);
+          if (processedBy && processedBy.toLowerCase() === entry.account.toLowerCase()) {
             acc.totalComplete++;
             if (entry._category === 'noCheck') acc.noCheckComplete++;
             else acc.proofErrorComplete++;
           }
         });
 
+        const rangeLabel = useDateFilter && startDate && endDate ? (' (' + startDate + ' ~ ' + endDate + ')') : ' (전체)';
         let html = '<table class="stats-table">';
+        html += '<caption style="caption-side:top;text-align:left;font-weight:600;margin-bottom:8px;">상담사별 요약' + rangeLabel + ' (처리건 = 해당 상담사가 유선안내완료 체크한 건)</caption>';
         html += '<thead><tr>';
         html += '<th>상담사</th>';
         html += '<th>총 분배</th><th>총 처리건</th>';
@@ -963,8 +1014,9 @@
           distributionMap.forEach((items, account) => {
             const completedCount = items.filter(item => {
               const key = `${item._prefix}_${item._dateKey}_${item.id}`;
-              const processingHistory = processingHistoryMap.get(key) || [];
-              return isCallCompleteForKey(processingHistory);
+              const ph = processingHistoryMap.get(key) || [];
+              const processedBy = getProcessedByAccount(ph);
+              return processedBy && processedBy.toLowerCase() === account.toLowerCase();
             }).length;
             const remainingCount = items.length - completedCount;
             
@@ -987,6 +1039,42 @@
           });
           
           html += '</tbody></table>';
+
+          // 계정별 처리 구역 (각 상담사가 처리한 건 별도 표시, 현재 유형 기준)
+          const processedByAccountMap = new Map();
+          allSubmissions.forEach(item => {
+            const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+            const history = distributionHistoryMap.get(key) || [];
+            if (!Array.isArray(history) || history.length === 0) return;
+            const latest = history[history.length - 1];
+            const itemCategory = latest.category === 'proofError' ? 'proofError' : 'noCheck';
+            if (itemCategory !== filterType) return;
+            const ph = processingHistoryMap.get(key) || [];
+            const processedBy = getProcessedByAccount(ph);
+            if (!processedBy) return;
+            if (!processedByAccountMap.has(processedBy)) processedByAccountMap.set(processedBy, []);
+            processedByAccountMap.get(processedBy).push(item);
+          });
+          if (processedByAccountMap.size > 0) {
+            const zoneLabel = filterType === 'noCheck' ? '환불/교환 미체크' : '증빙오류(반려)';
+            html += '<h4 style="margin-top: 20px; margin-bottom: 8px;">📌 계정별 처리 구역 (' + zoneLabel + ' 중 각 상담사가 유선안내완료 체크한 건)</h4>';
+            const sortedAccounts = [...processedByAccountMap.keys()].sort();
+            sortedAccounts.forEach(acc => {
+              const items = processedByAccountMap.get(acc);
+              const shortName = acc.replace('@ubase.co.kr', '');
+              html += '<div class="distribution-card" style="margin-bottom: 12px; border-left: 4px solid #17a;">';
+              html += '<h5 style="margin: 0 0 8px 0; font-size: 13px;">' + escapeHtml(shortName) + ' 처리 구역 (' + items.length + '건)</h5>';
+              html += '<div class="distribution-list" style="max-height: 180px;">';
+              items.forEach(item => {
+                html += '<div class="distribution-item" style="padding: 6px 10px;">';
+                html += '<div class="distribution-item-info">';
+                html += '<strong>' + escapeHtml(item.name || '-') + ' / ' + escapeHtml(item.contact || '-') + '</strong>';
+                html += '<span>접수ID: ' + escapeHtml(item.id) + ' | ' + PROJECT_LABELS[PREFIXES.indexOf(item._prefix)] + '</span>';
+                html += '</div></div>';
+              });
+              html += '</div></div>';
+            });
+          }
         }
 
         // 미분배 접수건 표시
@@ -1041,8 +1129,9 @@
             const fromItems = distributionMap.get(fromAccount) || [];
             const uncompletedItems = fromItems.filter(item => {
               const key = `${item._prefix}_${item._dateKey}_${item.id}`;
-              const processingHistory = processingHistoryMap.get(key) || [];
-              return !isCallCompleteForKey(processingHistory);
+              const ph = processingHistoryMap.get(key) || [];
+              const processedBy = getProcessedByAccount(ph);
+              return !(processedBy && processedBy.toLowerCase() === fromAccount.toLowerCase());
             });
             
             if (uncompletedItems.length === 0) {
@@ -1252,8 +1341,9 @@
       distributionMap.forEach((items, account) => {
         const completedCount = items.filter(item => {
           const key = `${item._prefix}_${item._dateKey}_${item.id}`;
-          const processingHistory = processingHistoryMap.get(key) || [];
-          return isCallCompleteForKey(processingHistory);
+          const ph = processingHistoryMap.get(key) || [];
+          const processedBy = getProcessedByAccount(ph);
+          return processedBy && processedBy.toLowerCase() === account.toLowerCase();
         }).length;
         const remainingCount = items.length - completedCount;
 
@@ -1312,8 +1402,9 @@
           const fromItems = distributionMap.get(fromAccount) || [];
           const uncompletedItems = fromItems.filter(item => {
             const key = `${item._prefix}_${item._dateKey}_${item.id}`;
-            const processingHistory = processingHistoryMap.get(key) || [];
-            return !isCallCompleteForKey(processingHistory);
+            const ph = processingHistoryMap.get(key) || [];
+            const processedBy = getProcessedByAccount(ph);
+            return !(processedBy && processedBy.toLowerCase() === fromAccount.toLowerCase());
           });
           closeModal();
           openBulkReassignModal(fromAccount, uncompletedItems, filterType);
@@ -1396,10 +1487,8 @@
         distributionHistoryMap = await loadDistributionHistoryFromFirebase();
         await loadProcessingAndCounselingFromFirebase();
 
-        // 모든 접수 데이터 로드 (최근 30일)
+        // 잔여건: 통계와 동일한 기준 — 분배 이력 전체를 기반으로 (날짜 제한 없음)
         const allItems = [];
-        const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
-        
         for (const prefix of PREFIXES) {
           const snap = await get(dbRef(db, prefix + '/submissions_meta'));
           if (snap.exists()) {
@@ -1408,20 +1497,18 @@
               if (!/^\d{8}$/.test(dateKey)) return;
               dateSnap.forEach((inner) => {
                 const item = inner.val();
-                if (item.createdAt && item.createdAt >= thirtyDaysAgo) {
-                  allItems.push({
-                    _prefix: prefix,
-                    id: inner.key,
-                    _dateKey: dateKey,
-                    ...item
-                  });
-                }
+                allItems.push({
+                  ...item,
+                  _prefix: prefix,
+                  id: inner.key,
+                  _dateKey: dateKey
+                });
               });
             });
           }
         }
 
-        // 상담사별 잔여건 계산 (통계와 동일한 컬럼: 총/미특정/증빙오류)
+        // 상담사별 잔여건 계산 (통계와 동일: 분배 이력 전체, 총/미특정/증빙오류)
         const accountRemaining = {};
         CS_ACCOUNTS.forEach(email => {
           accountRemaining[email] = {
@@ -1447,8 +1534,9 @@
               if (category === 'noCheck') acc.noCheckDist++; else acc.proofErrorDist++;
               acc.items.push({ ...item, _category: category });
 
-              const processingHistory = processingHistoryMap.get(key) || [];
-              const isCompleted = isCallCompleteForKey(processingHistory);
+              const ph = processingHistoryMap.get(key) || [];
+              const processedBy = getProcessedByAccount(ph);
+              const isCompleted = processedBy && processedBy.toLowerCase() === account.toLowerCase();
               if (isCompleted) {
                 acc.totalComplete++;
                 if (category === 'noCheck') acc.noCheckComplete++; else acc.proofErrorComplete++;
@@ -1514,8 +1602,9 @@
             const fromAccount = btn.getAttribute('data-account');
             const remainingItems = accountRemaining[fromAccount].items.filter(item => {
               const key = `${item._prefix}_${item._dateKey}_${item.id}`;
-              const processingHistory = processingHistoryMap.get(key) || [];
-              return !isCallCompleteForKey(processingHistory);
+              const ph = processingHistoryMap.get(key) || [];
+              const processedBy = getProcessedByAccount(ph);
+              return !(processedBy && processedBy.toLowerCase() === fromAccount.toLowerCase());
             });
             openTransferModal(fromAccount, remainingItems);
           });
@@ -1534,12 +1623,13 @@
         return;
       }
 
+      const useDateFilter = !(statsDateAllCb && statsDateAllCb.checked);
       const startDate = statsStartDate.value;
       const endDate = statsEndDate.value;
       const selectedAccount = historyAccountSelect ? historyAccountSelect.value : '';
 
-      if (!startDate || !endDate) {
-        statsResult.innerHTML = '<div class="msg error">기간을 선택해주세요.</div>';
+      if (useDateFilter && (!startDate || !endDate)) {
+        statsResult.innerHTML = '<div class="msg error">전체가 아닐 경우 기간을 선택해주세요.</div>';
         return;
       }
 
@@ -1548,8 +1638,11 @@
       if (downloadStatsBtn) downloadStatsBtn.style.display = 'none';
 
       try {
-        const startTime = new Date(startDate + 'T00:00:00').getTime();
-        const endTime = new Date(endDate + 'T23:59:59').getTime();
+        let startTime = 0, endTime = Number.MAX_SAFE_INTEGER;
+        if (useDateFilter && startDate && endDate) {
+          startTime = new Date(startDate + 'T00:00:00').getTime();
+          endTime = new Date(endDate + 'T23:59:59').getTime();
+        }
 
         distributionHistoryMap = await loadDistributionHistoryFromFirebase();
         await loadProcessingAndCounselingFromFirebase();
@@ -1577,8 +1670,9 @@
                 s.totalDist++;
                 if (category === 'noCheck') s.noCheckDist++; else s.proofErrorDist++;
 
-                const processingHistory = processingHistoryMap.get(key) || [];
-                if (isCallCompleteForKey(processingHistory)) {
+                const ph = processingHistoryMap.get(key) || [];
+                const processedBy = getProcessedByAccount(ph);
+                if (processedBy && processedBy.toLowerCase() === account.toLowerCase()) {
                   s.totalComplete++;
                   if (category === 'noCheck') s.noCheckComplete++; else s.proofErrorComplete++;
                 }
@@ -1588,7 +1682,10 @@
           }
         });
 
+        const rangeLabel = useDateFilter && startDate && endDate ? (' (' + startDate + ' ~ ' + endDate + ')') : ' (전체)';
+        const accountLabel = selectedAccount ? (' — ' + selectedAccount) : '';
         let html = '<table class="stats-table stats-history">';
+        html += '<caption style="caption-side:top;text-align:left;font-weight:600;margin-bottom:8px;">날짜별 상세' + rangeLabel + accountLabel + '</caption>';
         html += '<thead><tr>';
         html += '<th>날짜</th><th>상담사</th>';
         html += '<th>총 분배</th><th>총 처리건</th>';
