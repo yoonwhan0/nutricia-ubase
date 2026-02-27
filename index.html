@@ -49,45 +49,6 @@
       content: '';
       position: absolute;
     }
-    /* 고유번호 중복 검사 모달 */
-    .duplicate-modal-overlay {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 10000;
-      display: none; align-items: center; justify-content: center; padding: 20px; overflow-y: auto;
-    }
-    .duplicate-modal-overlay.show { display: flex; }
-    .duplicate-modal-box {
-      background: #fff; border-radius: 8px; max-width: 95%; width: 1200px; max-height: 90vh;
-      display: flex; flex-direction: column; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-    }
-    .duplicate-modal-header {
-      padding: 16px 20px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center;
-      background: #f8f9fa; border-radius: 8px 8px 0 0;
-    }
-    .duplicate-modal-header h2 { margin: 0; font-size: 18px; color: #333; }
-    .duplicate-modal-close {
-      background: #666; color: #fff; border: none; padding: 6px 12px; border-radius: 4px;
-      cursor: pointer; font-size: 13px;
-    }
-    .duplicate-modal-close:hover { background: #555; }
-    .duplicate-modal-body {
-      padding: 20px; overflow-y: auto; flex: 1;
-    }
-    .duplicate-table-wrapper {
-      overflow-x: auto; margin-top: 16px;
-    }
-    .duplicate-table {
-      width: 100%; border-collapse: collapse; font-size: 12px;
-    }
-    .duplicate-table th,
-    .duplicate-table td {
-      border: 1px solid #ddd; padding: 8px; text-align: left;
-    }
-    .duplicate-table th {
-      background: #f5f5f5; font-weight: 600; position: sticky; top: 0; z-index: 10;
-    }
-    .duplicate-table tr:hover { background: #f9f9f9; }
-    .duplicate-table .duplicate-flag { color: #dc3545; font-weight: 600; }
-    .duplicate-table .same-customer { color: #28a745; }
     .admin-table .cell-text, .admin-table td[data-fulltext] { cursor: default; }
 
     /* 고객 조회 툴바 버튼 통일 (크기·정렬) */
@@ -373,7 +334,6 @@
           <button type="button" class="btn btn-primary" id="searchBtn" style="width: auto; margin-top: -1px;">검색</button>
           <button type="button" class="btn" id="searchResetBtn" style="width: auto; background: #777; color: #fff;">초기화</button>
           <button type="button" class="btn" id="listRefreshBtn" style="width: auto; background: #0a5; color: #fff;">목록 새로고침</button>
-          <button type="button" class="btn" id="duplicateCheckBtn" style="width: auto; background: #dc3545; color: #fff;">고유번호 중복 검사</button>
           <a href="dashboard.html" target="_blank" rel="noopener" class="btn" style="width: auto; background: #17a; color: #fff;">현황확인하기(대시보드)</a>
         </div>
       </div>
@@ -704,6 +664,8 @@
       }
       
       allItems.forEach((item) => {
+        // 잘못된정보 체크된 건만 중복 검사에서 제외 (재접수 허용)
+        if (item.invalidInfo === true) return;
         const u = getUniqueCodesArray(item);
         const contact = normalizeContactForDup(item.contact);
         u.forEach((uc) => {
@@ -1644,203 +1606,6 @@
       });
     }
 
-    // ——— 고유번호 중복 검사 기능 ———
-    const duplicateCheckBtn = document.getElementById('duplicateCheckBtn');
-    const duplicateModal = document.getElementById('duplicateModal');
-    const duplicateModalClose = document.getElementById('duplicateModalClose');
-    let duplicateCheckResults = [];
-
-    function normalizeContact(c) {
-      return (c || '').replace(/\D/g, '').trim();
-    }
-
-    function checkDuplicateUniqueCodes() {
-      if (!allItems || allItems.length === 0) {
-        alert('접수 데이터를 먼저 불러와주세요.');
-        return;
-      }
-
-      duplicateCheckBtn.disabled = true;
-      const statusEl = document.getElementById('duplicateModalStatus');
-      const summaryEl = document.getElementById('duplicateModalSummary');
-      const tableWrapper = document.getElementById('duplicateTableWrapper');
-      const tableBody = document.getElementById('duplicateTableBody');
-      const csvBtn = document.getElementById('duplicateModalCsvBtn');
-
-      statusEl.innerHTML = '<div class="msg info">고유번호 중복 검사 중…</div>';
-      tableWrapper.style.display = 'none';
-      csvBtn.style.display = 'none';
-      tableBody.innerHTML = '';
-
-      // 고유번호별 접수 목록 수집
-      const uniqueCodeMap = new Map(); // uniqueCode -> [{ submission, contact }]
-
-      allItems.forEach((item) => {
-        const u = getUniqueCodesArray(item);
-        const contact = normalizeContact(item.contact);
-
-        u.forEach((uc) => {
-          const code = (uc.uniqueCode || '').trim();
-          if (!code) return;
-
-          if (!uniqueCodeMap.has(code)) {
-            uniqueCodeMap.set(code, []);
-          }
-          uniqueCodeMap.get(code).push({
-            submission: item,
-            contact: contact,
-            productName: uc.productName || '',
-            batchNumber: uc.batchNumber || ''
-          });
-        });
-      });
-
-      // 중복된 고유번호 찾기 (2개 이상의 접수에서 사용)
-      const duplicates = [];
-      uniqueCodeMap.forEach((submissions, code) => {
-        if (submissions.length >= 2) {
-          // 같은 고객인지 확인 (연락처 기준)
-          const contacts = new Set(submissions.map(s => s.contact).filter(c => c));
-          const isSameCustomer = contacts.size <= 1;
-
-          duplicates.push({
-            uniqueCode: code,
-            count: submissions.length,
-            submissions: submissions,
-            isSameCustomer: isSameCustomer
-          });
-        }
-      });
-
-      // 접수일시 기준 정렬 (최신순)
-      duplicates.sort((a, b) => {
-        const aTime = Math.max(...a.submissions.map(s => s.submission.createdAt || 0));
-        const bTime = Math.max(...b.submissions.map(s => s.submission.createdAt || 0));
-        return bTime - aTime;
-      });
-
-      duplicateCheckResults = duplicates;
-
-      if (duplicates.length === 0) {
-        statusEl.innerHTML = '<div class="msg ok" style="background:#d4edda; color:#155724;">중복된 고유번호가 없습니다.</div>';
-        summaryEl.textContent = '중복된 고유번호: 0건';
-      } else {
-        statusEl.innerHTML = '<div class="msg error" style="background:#f8d7da; color:#721c24;">중복된 고유번호 ' + duplicates.length + '건을 발견했습니다.</div>';
-        summaryEl.textContent = '중복된 고유번호: ' + duplicates.length + '건';
-
-        let rowsHtml = '';
-        duplicates.forEach((dup) => {
-          dup.submissions.forEach((sub, idx) => {
-            const d = sub.submission;
-            const proj = PROJECT_LABELS[d._projectIndex - 1] || '';
-            const dateStr = formatDate(d.createdAt);
-            const isSameCustomerClass = dup.isSameCustomer ? 'same-customer' : 'duplicate-flag';
-            const statusText = dup.isSameCustomer ? '동일 고객' : '⚠️ 다른 고객';
-
-            rowsHtml += '<tr class="' + isSameCustomerClass + '">';
-            if (idx === 0) {
-              rowsHtml += '<td rowspan="' + dup.count + '" style="font-weight:600; vertical-align:top;">' + escapeHtml(dup.uniqueCode) + '</td>';
-              rowsHtml += '<td rowspan="' + dup.count + '" style="text-align:center; vertical-align:top;">' + dup.count + '</td>';
-            }
-            rowsHtml += '<td>' + escapeHtml(d.id || '-') + '</td>';
-            rowsHtml += '<td>' + escapeHtml(d.name || '-') + '</td>';
-            rowsHtml += '<td>' + escapeHtml(d.contact || '-') + '</td>';
-            rowsHtml += '<td>' + escapeHtml(dateStr) + '</td>';
-            rowsHtml += '<td>' + escapeHtml(proj) + '</td>';
-            rowsHtml += '<td>' + statusText + '</td>';
-            rowsHtml += '</tr>';
-          });
-        });
-
-        tableBody.innerHTML = rowsHtml;
-        tableWrapper.style.display = 'block';
-        csvBtn.style.display = 'inline-block';
-      }
-
-      duplicateModal.classList.add('show');
-      duplicateModal.setAttribute('aria-hidden', 'false');
-      duplicateCheckBtn.disabled = false;
-    }
-
-    if (duplicateCheckBtn) {
-      duplicateCheckBtn.addEventListener('click', checkDuplicateUniqueCodes);
-    }
-
-    if (duplicateModalClose) {
-      duplicateModalClose.addEventListener('click', () => {
-        duplicateModal.classList.remove('show');
-        duplicateModal.setAttribute('aria-hidden', 'true');
-      });
-    }
-
-    if (duplicateModal) {
-      duplicateModal.addEventListener('click', (e) => {
-        if (e.target === duplicateModal) {
-          duplicateModal.classList.remove('show');
-          duplicateModal.setAttribute('aria-hidden', 'true');
-        }
-      });
-    }
-
-    // 중복 검사 결과 CSV 다운로드
-    const duplicateModalCsvBtn = document.getElementById('duplicateModalCsvBtn');
-    if (duplicateModalCsvBtn) {
-      duplicateModalCsvBtn.addEventListener('click', () => {
-        if (!duplicateCheckResults || duplicateCheckResults.length === 0) {
-          alert('다운로드할 데이터가 없습니다.');
-          return;
-        }
-
-        function csvEscape(val) {
-          const s = val == null ? '' : String(val);
-          if (s.includes('"') || s.includes(',') || s.includes('\n') || s.includes('\r')) return '"' + s.replace(/"/g, '""') + '"';
-          return s;
-        }
-
-        function formatContactForCsv(v) {
-          if (v == null || v === '') return '';
-          let s = String(v).replace(/\D/g, '');
-          if (s.length >= 9 && s.length <= 11 && s.startsWith('10')) s = '0' + s;
-          return s || String(v);
-        }
-
-        const lines = [];
-        lines.push(['고유번호', '사용건수', '접수ID', '이름', '연락처', '접수일시', '프로젝트', '상태', '제품명', '제조번호'].map(csvEscape).join(','));
-
-        duplicateCheckResults.forEach((dup) => {
-          dup.submissions.forEach((sub) => {
-            const d = sub.submission;
-            const proj = PROJECT_LABELS[d._projectIndex - 1] || '';
-            const dateStr = formatDate(d.createdAt);
-            const statusText = dup.isSameCustomer ? '동일 고객' : '다른 고객';
-
-            lines.push([
-              dup.uniqueCode,
-              dup.count,
-              d.id || '',
-              d.name || '',
-              formatContactForCsv(d.contact),
-              dateStr,
-              proj,
-              statusText,
-              sub.productName || '',
-              sub.batchNumber || ''
-            ].map(csvEscape).join(','));
-          });
-        });
-
-        const bom = '\uFEFF';
-        const csv = bom + lines.join('\r\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        const now = new Date();
-        const dateStr = now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0');
-        a.download = '고유번호_중복_검사_' + dateStr + '.csv';
-        a.click();
-        URL.revokeObjectURL(a.href);
-      });
-    }
   </script>
 </body>
 </html>
