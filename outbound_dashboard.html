@@ -594,8 +594,9 @@
               if (!/^\d{8}$/.test(dateKey)) return;
               dateSnap.forEach((idSnap) => {
                 const id = idSnap.key;
-                const arr = [];
-                idSnap.forEach((child) => arr.push(child.val()));
+                const raw = [];
+                idSnap.forEach((child) => raw.push(child.val()));
+                const arr = raw.map(h => (h && typeof h === 'object') ? { account: h.account || '', timestamp: h.timestamp || 0, changes: String(h.changes || '') } : null).filter(Boolean);
                 if (arr.length) procMap.set(`${prefix}_${dateKey}_${id}`, arr.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
               });
             });

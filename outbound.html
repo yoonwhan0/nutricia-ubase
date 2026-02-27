@@ -1140,15 +1140,30 @@
       infoHtml += '<div class="info-row"><strong>접수일시</strong> ' + formatDate(d.createdAt) + '</div>';
       infoHtml += '</div></div>';
 
-      // 2. 제품 등록
+      const dmLocked = !!(d.refundComplete || d.exchangeComplete);
+      // 2. 제품 등록 (잘못된정보 체크 시 고유번호/제조번호 재등록 가능, 다른 어드민과 동일)
       const products = getUniqueCodesArray(d);
+      const canEditProducts = !!(d.invalidInfo && !dmLocked);
       if (products && products.length > 0) {
         infoHtml += '<div class="info-section"><h3>제품 등록</h3>';
+        if (canEditProducts) {
+          infoHtml += '<p style="font-size:12px;color:#666;margin-bottom:8px;">잘못된정보 건 — 고유번호·제조번호 수정 후 저장</p>';
+        }
         infoHtml += '<table class="product-table"><thead><tr><th>순번</th><th>제품명</th><th>제조번호</th><th>고유번호</th></tr></thead><tbody>';
         products.forEach((p, idx) => {
-          infoHtml += '<tr><td>' + (idx + 1) + '</td><td>' + escapeHtml(p.productName || '-') + '</td><td>' + escapeHtml(p.batchNumber || '-') + '</td><td>' + escapeHtml(p.uniqueCode || '-') + '</td></tr>';
+          if (canEditProducts) {
+            infoHtml += '<tr><td>' + (idx + 1) + '</td><td>' + escapeHtml(p.productName || '-') + '</td>' +
+              '<td><input type="text" class="dm-product-batch" data-idx="' + idx + '" value="' + escapeAttr(p.batchNumber || '') + '" placeholder="제조번호" style="width:100%;padding:4px;"></td>' +
+              '<td><input type="text" class="dm-product-unique" data-idx="' + idx + '" value="' + escapeAttr(p.uniqueCode || '') + '" placeholder="고유번호" style="width:100%;padding:4px;"></td></tr>';
+          } else {
+            infoHtml += '<tr><td>' + (idx + 1) + '</td><td>' + escapeHtml(p.productName || '-') + '</td><td>' + escapeHtml(p.batchNumber || '-') + '</td><td>' + escapeHtml(p.uniqueCode || '-') + '</td></tr>';
+          }
         });
-        infoHtml += '</tbody></table></div>';
+        infoHtml += '</tbody></table>';
+        if (canEditProducts) {
+          infoHtml += '<button type="button" id="dm-save-products-btn" class="btn btn-primary" style="margin-top:8px;">고유번호·제조번호 저장</button>';
+        }
+        infoHtml += '</div>';
       }
 
       infoRowsEl.innerHTML = infoHtml;
@@ -1157,7 +1172,6 @@
       const rC = d.refundDone ? ' checked' : '';
       const eC = d.exchangeDone ? ' checked' : '';
       const iC = d.invalidInfo ? ' checked' : '';
-      const dmLocked = !!(d.refundComplete || d.exchangeComplete);
       const dmLockedAttr = dmLocked ? ' disabled title="처리 완료 건 — 수정 불가"' : '';
 
       const processingHistory = await loadProcessingHistory(d.id, d._dateKey || '', d._prefix || '');
@@ -1198,6 +1212,7 @@
       flagsEl.innerHTML =
         '<h3>상태 체크</h3>' +
         (dmLocked ? '<p style="font-size:12px;color:#856404;margin-bottom:8px;">※ 환불완료/교환완료 건 — 환불·교환·잘못된정보는 수정 불가</p>' : '') +
+        '<p style="font-size:12px;color:#666;margin-bottom:8px;">여러 개 체크한 뒤 <strong>적용</strong> 버튼을 눌러 저장하세요.</p>' +
         '<div class="checkbox-group">' +
         '<label><input type="checkbox" id="dm-cb-refund" data-field="refundDone"' + rC + dmLockedAttr + '> 환불</label>' +
         '<label><input type="checkbox" id="dm-cb-exchange" data-field="exchangeDone"' + eC + dmLockedAttr + '> 교환</label>' +
@@ -1205,6 +1220,7 @@
         '<label><input type="checkbox" id="dm-cb-callComplete" data-field="callComplete"' + callC + '> 유선안내완료</label>' +
         '<label><input type="checkbox" id="dm-cb-finalUnreached" data-field="finalUnreached"' + finalUC + '> 최종미연결</label>' +
         '</div>' +
+        '<button type="button" id="dm-apply-flags-btn" class="btn btn-primary" style="margin-top:12px;">적용</button>' +
         statusReadonlyHtml +
         '<h3 style="margin-top: 16px;">상담이력</h3>' +
         counselingHtml +
@@ -1336,10 +1352,46 @@
         }
       };
       
-      [cbRefund, cbExchange, cbInvalid, cbCallComplete, cbFinalUnreached].forEach(cb => {
-        if (!cb) return;
-        cb.addEventListener('change', saveFromModal);
-      });
+      const applyBtn = document.getElementById('dm-apply-flags-btn');
+      if (applyBtn) applyBtn.addEventListener('click', saveFromModal);
+
+      const saveProductsBtn = document.getElementById('dm-save-products-btn');
+      if (saveProductsBtn) {
+        saveProductsBtn.addEventListener('click', async () => {
+          const d = currentDetailData;
+          if (!d || !db) return;
+          const products = getUniqueCodesArray(d);
+          const updated = products.map((p, idx) => {
+            const batchIn = document.querySelector('.dm-product-batch[data-idx="' + idx + '"]');
+            const uniqueIn = document.querySelector('.dm-product-unique[data-idx="' + idx + '"]');
+            return {
+              productName: p.productName || '',
+              batchNumber: (batchIn && batchIn.value) ? batchIn.value.trim() : (p.batchNumber || ''),
+              uniqueCode: (uniqueIn && uniqueIn.value) ? uniqueIn.value.trim() : (p.uniqueCode || '')
+            };
+          });
+          const id = d.id;
+          const dateKey = (d._dateKey || '').trim();
+          const isLegacy = !!d._isLegacy;
+          const prefix = (d._prefix || '').trim();
+          if (!id || !prefix || (!isLegacy && !dateKey)) return;
+          const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
+          const metaPath = dateKey ? (prefix + '/submissions_meta/' + dateKey + '/' + id) : '';
+          try {
+            await update(dbRef(db, subPath), { uniqueCodesData: updated });
+            if (metaPath) await update(dbRef(db, metaPath), { uniqueCodesData: updated });
+            const it = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
+            if (it) it.uniqueCodesData = updated;
+            await addProcessingHistory(id, dateKey, prefix, '고유번호·제조번호 재등록');
+            alert('고유번호·제조번호가 저장되었습니다.');
+            closeDetailModal();
+            renderTable();
+          } catch (err) {
+            console.error('저장 오류:', err);
+            alert('저장 실패: ' + (err.message || err));
+          }
+        });
+      }
       
       if (saveHistoryBtn) {
         saveHistoryBtn.addEventListener('click', async () => {
