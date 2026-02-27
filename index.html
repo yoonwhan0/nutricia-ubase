@@ -51,6 +51,13 @@
     }
     .admin-table .cell-text, .admin-table td[data-fulltext] { cursor: default; }
 
+    /* 제조번호+고유번호 중복 강조 */
+    .admin-table tr.row-has-duplicate { background-color: #ffe8e8 !important; }
+    .admin-table tr.row-has-duplicate td.cell-duplicate-highlight {
+      background-color: #ffcccc !important;
+      background: #ffcccc !important;
+    }
+
     /* 고객 조회 툴바 버튼 통일 (크기·정렬) */
     .admin-search .btn,
     .admin-search a.btn {
@@ -350,6 +357,7 @@
         <p class="msg ubase-notice" style="background:#ffe0e0; color:#721c24; border-left:4px solid #dc3545; margin-bottom: 8px;"><strong>공지:</strong> 붉은음영 처리된 고객은 고유번호를 중복으로 업로드한 고객입니다. 업무에 참고 부탁드립니다.</p>
       </div>
       <div id="listMessage"></div>
+      <p id="duplicateCountNotice" style="display:none; margin:8px 0; padding:8px 12px; background:#ffe0e0; color:#721c24; border-radius:6px; font-size:13px;"></p>
       <div id="submissionList"></div>
     </div>
   </div>
@@ -731,13 +739,16 @@
         }
       });
       
-      // 디버깅: 중복 제조번호+고유번호 조합 확인
-      if (duplicateUniqueCodes.size > 0) {
-        console.log('중복 제조번호+고유번호 조합 발견:', Array.from(duplicateUniqueCodes));
-      }
-      
       paginationPage = 1;
       renderTable();
+      
+      // 중복 건수 안내 (강조 확인용)
+      const dupCountEl = document.getElementById('duplicateCountNotice');
+      if (dupCountEl) {
+        const cnt = duplicateSubmissionIds.size;
+        dupCountEl.textContent = cnt > 0 ? '제조번호+고유번호 중복 ' + cnt + '건 — 붉은색 강조' : '';
+        dupCountEl.style.display = cnt > 0 ? 'block' : 'none';
+      }
     }
 
     /** 4개 프로젝트 submissions_meta 한 번만 읽기 (실시간 구독 없음 → 다운로드 비용 절감) */
@@ -891,12 +902,13 @@
 
         const rowKey = d.id + '|' + dateKey + '|' + prefix;
         const isDuplicate = duplicateSubmissionIds.has(rowKey);
-        const duplicateCellStyle = isDuplicate ? ' style="background-color: #ffe0e0;"' : '';
-        rowsHtml += '<tr data-id="' + escapeAttr(d.id) + '" data-date-key="' + escapeAttr(dateKey) + '" data-legacy="' + (isLegacy ? '1' : '0') + '" data-prefix="' + escapeAttr(prefix) + '" data-project-index="' + d._projectIndex + '" data-locked="' + (locked ? '1' : '0') + '">';
+        const rowClass = isDuplicate ? ' row-has-duplicate' : '';
+        const duplicateCellAttr = isDuplicate ? ' class="cell-duplicate-highlight"' : '';
+        rowsHtml += '<tr class="' + rowClass.trim() + '" data-id="' + escapeAttr(d.id) + '" data-date-key="' + escapeAttr(dateKey) + '" data-legacy="' + (isLegacy ? '1' : '0') + '" data-prefix="' + escapeAttr(prefix) + '" data-project-index="' + d._projectIndex + '" data-locked="' + (locked ? '1' : '0') + '">';
         rowsHtml += '<td class="cell-seq">' + seq + '</td>';
         rowsHtml += '<td class="cell-project">' + proj + '</td>';
         rowsHtml += '<td><button type="button" class="btn btn-primary photo-view-btn" style="font-size:11px;padding:2px 6px;">사진 보기</button></td>';
-        rowsHtml += '<td' + duplicateCellStyle + '><span class="cell-text">' + escapeHtml(d.name || '-') + '</span></td>';
+        rowsHtml += '<td' + duplicateCellAttr + '><span class="cell-text">' + escapeHtml(d.name || '-') + '</span></td>';
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.contact || '-') + '</span></td>';
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.address || '-') + '</span></td>';
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.addressDetail || '-') + '</span></td>';
@@ -918,21 +930,17 @@
         rowsHtml += '<td><span class="cell-text">' + (d.quantity != null ? d.quantity : '-') + '</span></td>';
         for (let i = 0; i < 12; i++) {
           rowsHtml += '<td><span class="cell-text">' + escapeHtml(u12[i].productName || '-') + '</span></td>';
-          rowsHtml += '<td><span class="cell-text">' + escapeHtml(u12[i].batchNumber || '-') + '</span></td>';
           const uniqueCode = (u12[i].uniqueCode || '').trim();
           const batchNumber = (u12[i].batchNumber || '').trim();
-          
-          // 실제로 중복된 제조번호+고유번호 조합만 음영처리
-          // 제조번호+고유번호 조합으로 중복 체크
+          // 해당 제조번호+고유번호 조합만 강조
           let isUniqueCodeDuplicate = false;
           if (uniqueCode) {
             const normalizedCombination = normalizeBatchUniqueCombination(batchNumber, uniqueCode);
-            // duplicateUniqueCodes에는 실제로 2개 이상의 접수에서 사용된 조합만 포함됨
             isUniqueCodeDuplicate = normalizedCombination && duplicateUniqueCodes.has(normalizedCombination);
           }
-          
-          const uniqueCodeCellStyle = isUniqueCodeDuplicate ? ' style="background-color: #ffe0e0;"' : '';
-          rowsHtml += '<td' + uniqueCodeCellStyle + '><span class="cell-text">' + escapeHtml(uniqueCode || '-') + '</span></td>';
+          const dupCellAttr = isUniqueCodeDuplicate ? ' class="cell-duplicate-highlight"' : '';
+          rowsHtml += '<td' + dupCellAttr + '><span class="cell-text">' + escapeHtml(batchNumber || '-') + '</span></td>';
+          rowsHtml += '<td' + dupCellAttr + '><span class="cell-text">' + escapeHtml(uniqueCode || '-') + '</span></td>';
         }
         rowsHtml += '<td class="cell-flag">' + (d.callComplete ? 'Y' : '-') + '</td>';
         rowsHtml += '<td><button type="button" class="btn btn-primary btn-counseling-view" style="font-size:11px;padding:2px 6px;" data-id="' + escapeAttr(d.id) + '" data-date-key="' + escapeAttr(dateKey) + '" data-prefix="' + escapeAttr(prefix) + '">상담이력</button></td>';
