@@ -446,6 +446,11 @@
     }
 
     const DISTRIBUTION_PATH = 'outbound_distribution/assignments';
+    function ensureHistoryArray(val) {
+      if (Array.isArray(val)) return val;
+      if (val && typeof val === 'object') return Object.keys(val).sort((a, b) => Number(a) - Number(b)).map(k => val[k]);
+      return [];
+    }
     // 분배 이력: Firebase에서 로드 (대시보드가 관리, CS는 읽기만)
     async function loadDistributionHistoryFromFirebase() {
       if (!db) return new Map();
@@ -454,7 +459,9 @@
         if (!snap.exists()) return new Map();
         const data = snap.val();
         if (!data || typeof data !== 'object') return new Map();
-        return new Map(Object.entries(data));
+        const map = new Map();
+        Object.entries(data).forEach(([k, v]) => map.set(k, ensureHistoryArray(v)));
+        return map;
       } catch (e) {
         console.error('분배 이력 로드 오류:', e);
         return new Map();

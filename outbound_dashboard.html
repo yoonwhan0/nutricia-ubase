@@ -501,6 +501,12 @@
 
     const DISTRIBUTION_PATH = 'outbound_distribution/assignments';
     // 분배 이력: Firebase 저장 (대시보드가 관리, CS는 읽기만)
+    function ensureHistoryArray(val) {
+      if (Array.isArray(val)) return val;
+      if (val && typeof val === 'object') return Object.keys(val).sort((a, b) => Number(a) - Number(b)).map(k => val[k]);
+      return [];
+    }
+
     async function loadDistributionHistoryFromFirebase() {
       if (!db) return new Map();
       try {
@@ -508,7 +514,9 @@
         if (!snap.exists()) return new Map();
         const data = snap.val();
         if (!data || typeof data !== 'object') return new Map();
-        return new Map(Object.entries(data));
+        const map = new Map();
+        Object.entries(data).forEach(([k, v]) => map.set(k, ensureHistoryArray(v)));
+        return map;
       } catch (e) {
         console.error('분배 이력 로드 실패:', e);
         return new Map();
@@ -516,12 +524,14 @@
     }
 
     async function saveDistributionHistoryToFirebase(map) {
-      if (!db) return;
+      if (!db) return false;
       try {
         const obj = Object.fromEntries(map);
         await set(dbRef(db, DISTRIBUTION_PATH), obj);
+        return true;
       } catch (e) {
         console.error('분배 이력 저장 실패:', e);
+        return false;
       }
     }
 
@@ -546,8 +556,8 @@
       console.log('[목업] 계정별 회수:', { account, recallCount });
       alert(account + ' 배정 ' + recallCount + '건을 회수했습니다.');
 
-      loadDistribution('noCheck');
-      loadDistribution('proofError');
+      await loadDistribution('noCheck');
+      await loadDistribution('proofError');
       loadRemaining();
       loadHistory();
       loadStats();
@@ -563,8 +573,8 @@
       console.log('[목업] 분배 이력 초기화 완료');
       alert('전체 배정이 회수되었습니다.');
 
-      loadDistribution('noCheck');
-      loadDistribution('proofError');
+      await loadDistribution('noCheck');
+      await loadDistribution('proofError');
       loadRemaining();
       loadHistory();
       loadStats();
@@ -616,6 +626,7 @@
     let processingHistoryMap = new Map();
     let counselingHistoryMap = new Map();
     let allSubmissions = [];
+    let loadDistributionInProgress = false; // 동시 실행 방지
     let isSigningOut = false; // 무한 루프 방지 플래그
     let lastCheckedEmail = ''; // 마지막으로 확인한 이메일 (중복 체크 방지)
 
@@ -864,13 +875,18 @@
         return;
       }
 
+      while (loadDistributionInProgress) {
+        await new Promise(r => setTimeout(r, 80));
+      }
+      loadDistributionInProgress = true;
+
       const targetResult = document.querySelector('.dist-result[data-type="' + filterType + '"]');
       const targetLoading = document.querySelector('.dist-loading[data-type="' + filterType + '"]');
       if (targetLoading) targetLoading.style.display = 'block';
       if (targetResult) targetResult.innerHTML = '';
 
       try {
-        // 전체 접수건 조회 (날짜 제한 없음)
+        // 전체 접수건 조회 (날짜 제한 없음) - id는 inner.key로 고정 (item.id 덮어쓰기 방지)
         allSubmissions = [];
         for (const prefix of PREFIXES) {
           const snap = await get(dbRef(db, prefix + '/submissions_meta'));
@@ -881,10 +897,10 @@
               dateSnap.forEach((inner) => {
                 const item = inner.val();
                 allSubmissions.push({
+                  ...item,
                   _prefix: prefix,
                   id: inner.key,
-                  _dateKey: dateKey,
-                  ...item
+                  _dateKey: dateKey
                 });
               });
             });
@@ -1040,6 +1056,7 @@
         if (targetResult) targetResult.innerHTML = '<div class="msg error">접수건 조회 실패: ' + escapeHtml(err.message || err) + '</div>';
       } finally {
         if (targetLoading) targetLoading.style.display = 'none';
+        loadDistributionInProgress = false;
       }
     }
 
@@ -1120,9 +1137,13 @@
         }
       });
 
-      await saveDistributionHistoryToFirebase(distributionHistoryMap);
+      const saved = await saveDistributionHistoryToFirebase(distributionHistoryMap);
+      if (!saved) {
+        alert('분배 저장에 실패했습니다. 네트워크 및 Firebase 권한을 확인해주세요.');
+        return;
+      }
       alert('균등 분배가 완료되었습니다.');
-      loadDistribution(filterType);
+      await loadDistribution(filterType);
     }
 
     // 분배 모달 열기
@@ -1353,10 +1374,10 @@
       await saveDistributionHistoryToFirebase(distributionHistoryMap);
       alert('재분배가 완료되었습니다.');
       if (filterType) {
-        loadDistribution(filterType);
+        await loadDistribution(filterType);
       } else {
-        loadDistribution('noCheck');
-        loadDistribution('proofError');
+        await loadDistribution('noCheck');
+        await loadDistribution('proofError');
       }
     }
 
@@ -1659,8 +1680,8 @@
       await saveDistributionHistoryToFirebase(distributionHistoryMap);
       alert('이관이 완료되었습니다.');
       loadRemaining();
-      loadDistribution('noCheck');
-      loadDistribution('proofError');
+      await loadDistribution('noCheck');
+      await loadDistribution('proofError');
     }
 
 
