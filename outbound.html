@@ -46,6 +46,8 @@
       visibility: visible;
     }
     .admin-table .cell-text, .admin-table td[data-fulltext] { cursor: default; }
+    .admin-table tr.row-no-check { background-color: #e3f2fd; } /* 환불·교환 미체크 + 잘못된정보 미체크 — 푸른 파스텔 */
+    .admin-table tr.row-proof-error { background-color: #ffebee; } /* 증빙오류(반려) — 붉은 파스텔 */
     .admin-search .btn,
     .admin-search a.btn {
       padding: 8px 14px;
@@ -298,6 +300,7 @@
       </div>
       <div style="margin-bottom: 12px;">
         <p class="msg ubase-notice" style="background:#fff3cd; color:#856404; border-left:4px solid #ffc107;"><strong>공지:</strong> 아웃바운드 상담원 전용 페이지입니다. 유선안내 완료 체크 및 상담이력 기재가 가능합니다.</p>
+        <p class="msg ubase-notice" style="background:#fff; color:#555; border-left:4px solid #17a; font-size:12px; margin-top:8px;"><strong>행 색상:</strong> <span style="background:#e3f2fd;padding:2px 6px;border-radius:4px;">푸른색</span> = 환불·교환 미체크 + 잘못된정보 미체크 · <span style="background:#ffebee;padding:2px 6px;border-radius:4px;">붉은색</span> = 증빙오류(반려)</p>
       </div>
       <div id="listMessage"></div>
       <div id="submissionList"></div>
@@ -427,16 +430,27 @@
         for (const prefix of PREFIXES) {
           const procSnap = await get(dbRef(db, prefix + '/processing_history'));
           if (procSnap.exists()) {
-            procSnap.forEach((dateSnap) => {
-              const dateKey = dateSnap.key;
-              if (!/^\d{8}$/.test(dateKey)) return;
-              dateSnap.forEach((idSnap) => {
-                const id = idSnap.key;
-                const arr = [];
-                idSnap.forEach((child) => arr.push(child.val()));
-                if (arr.length) procMap.set(`${prefix}_${dateKey}_${id}`, arr.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+            const procVal = procSnap.val();
+            if (procVal && typeof procVal === 'object') {
+              Object.keys(procVal).forEach((dateKey) => {
+                if (!/^\d{8}$/.test(dateKey)) return;
+                const dateObj = procVal[dateKey];
+                if (!dateObj || typeof dateObj !== 'object') return;
+                Object.keys(dateObj).forEach((id) => {
+                  const idVal = dateObj[id];
+                  const arr = [];
+                  if (idVal && typeof idVal === 'object' && !Array.isArray(idVal)) {
+                    Object.keys(idVal).forEach((k) => {
+                      const h = idVal[k];
+                      if (h && typeof h === 'object' && (h.account != null || h.changes != null)) {
+                        arr.push({ account: h.account || '', timestamp: h.timestamp || 0, changes: String(h.changes || '') });
+                      }
+                    });
+                  }
+                  if (arr.length) procMap.set(`${prefix}_${dateKey}_${id}`, arr.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+                });
               });
-            });
+            }
           }
         }
         processingHistoryMap = procMap;
@@ -884,7 +898,7 @@
       return codes.map(code => ({ productName: '', batchNumber: '', uniqueCode: code || '' }));
     }
 
-    // 처리내역 기록 함수 (Firebase 저장)
+    // 처리내역 기록 함수 (Firebase 저장) — 저장 후 즉시 로컬 맵에도 반영
     async function addProcessingHistory(id, dateKey, prefix, changes) {
       if (!db || !currentUserEmail) return;
       const historyPath = prefix + '/processing_history/' + dateKey + '/' + id;
@@ -896,6 +910,11 @@
       };
       try {
         await push(historyRef, historyItem);
+        // 저장 직후 로컬 processingHistoryMap에 낙관적 반영 (카운팅 즉시 반영)
+        const key = `${prefix}_${dateKey || ''}_${id}`;
+        const existing = processingHistoryMap.get(key) || [];
+        const merged = [historyItem, ...existing].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        processingHistoryMap.set(key, merged);
       } catch (err) {
         console.error('처리내역 기록 오류:', err);
       }
@@ -978,8 +997,11 @@
         const prefix = d._prefix;
         const dateKey = d._dateKey || '';
         const isLegacy = !!d._isLegacy;
+        const isProofError = !!d.proofError;
+        const isNoCheck = !d.refundDone && !d.exchangeDone && !d.invalidInfo && !isProofError;
+        const rowClass = isProofError ? 'row-proof-error' : (isNoCheck ? 'row-no-check' : '');
 
-        rowsHtml += '<tr data-id="' + escapeAttr(d.id) + '" data-date-key="' + escapeAttr(dateKey) + '" data-legacy="' + (isLegacy ? '1' : '0') + '" data-prefix="' + escapeAttr(prefix) + '" data-project-index="' + d._projectIndex + '">';
+        rowsHtml += '<tr class="' + rowClass + '" data-id="' + escapeAttr(d.id) + '" data-date-key="' + escapeAttr(dateKey) + '" data-legacy="' + (isLegacy ? '1' : '0') + '" data-prefix="' + escapeAttr(prefix) + '" data-project-index="' + d._projectIndex + '">';
         rowsHtml += '<td class="cell-seq">' + seq + '</td>';
         rowsHtml += '<td class="cell-project">' + proj + '</td>';
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.name || '-') + '</span></td>';
@@ -1238,8 +1260,9 @@
       let statusReadonly = [];
       if (d.refundComplete) statusReadonly.push('환불완료');
       if (d.exchangeComplete) statusReadonly.push('교환완료');
-      if (d.evidenceError) statusReadonly.push('증빙오류');
+      if (d.proofError) statusReadonly.push('증빙오류(반려)');
       const statusReadonlyHtml = statusReadonly.length ? '<div class="status-readonly">' + statusReadonly.join(' · ') + '</div>' : '';
+      const proofErrorReasonHtml = (d.proofError && d.proofErrorReason) ? '<div class="proof-error-reason-box" style="margin-top:12px;padding:12px;background:#ffebee;border-left:4px solid #c62828;border-radius:6px;"><strong>증빙오류(반려) 사유</strong> (마스터 어드민 입력)<br><span style="font-size:13px;white-space:pre-wrap;">' + escapeHtml(d.proofErrorReason) + '</span></div>' : '';
 
       let counselingHtml = '<div class="counseling-history-list" id="dm-counseling-history-list">';
       if (counselingHistory.length > 0) {
@@ -1273,6 +1296,7 @@
         '</div>' +
         '<button type="button" id="dm-apply-flags-btn" class="btn btn-primary" style="margin-top:12px;">적용</button>' +
         statusReadonlyHtml +
+        proofErrorReasonHtml +
         '<h3 style="margin-top: 16px;">상담이력</h3>' +
         counselingHtml +
         '<textarea id="dm-counseling-history" placeholder="새 상담이력을 입력하세요."></textarea>' +
