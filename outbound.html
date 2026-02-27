@@ -276,10 +276,12 @@
         <div class="admin-search" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px;">
           <label style="font-size: 12px;">구분:</label>
           <select id="viewFilterSelect" style="padding: 6px 8px; font-size: 12px;">
+            <option value="noCallComplete">유선안내 미완료</option>
+            <option value="callComplete">유선안내완료</option>
+            <option value="finalUnreached">최종미연결</option>
             <option value="all">전체</option>
             <option value="proofError">증빙오류(반려)</option>
             <option value="noRefundExchange">환불·교환 모두 미체크 (접수시)</option>
-            <option value="noCallComplete">유선안내 미완료</option>
           </select>
           <span style="font-size: 11px; color: #666;">선택한 구분만 목록에 표시됩니다.</span>
         </div>
@@ -408,7 +410,7 @@
     let allItems = [];
     let paginationPage = 1;
     let searchFilters = { name: '', contact: '', customsCode: '', uniqueCode: '' };
-    let viewFilter = 'all';
+    let viewFilter = 'noCallComplete'; // 기본: 유선안내 미완료 (해야 할 일 먼저)
     let metaSnaps = {};
     let currentDetailData = null;
     let currentUserEmail = '';
@@ -418,45 +420,28 @@
     // 로컬 스토리지: 처리내역 및 상담이력 저장 (목업용 - CS 계정이 작성)
     // key: `${prefix}_${dateKey}_${id}`
     // 처리 내역과 상담 이력은 CS 계정이 작성하고, 대시보드는 읽기만 함
-    function loadProcessingHistoryFromStorage() {
-      const stored = localStorage.getItem('outbound_cs_processing_history');
-      if (stored) {
-        try {
-          return new Map(JSON.parse(stored));
-        } catch (e) {
-          return new Map();
-        }
-      }
-      return new Map();
-    }
-
-    function saveProcessingHistoryToStorage(map) {
+    async function loadProcessingHistoryFromFirebase() {
+      if (!db) return;
+      const procMap = new Map();
       try {
-        const array = Array.from(map.entries());
-        localStorage.setItem('outbound_cs_processing_history', JSON.stringify(array));
-      } catch (e) {
-        console.error('처리내역 저장 실패:', e);
-      }
-    }
-
-    function loadCounselingHistoryFromStorage() {
-      const stored = localStorage.getItem('outbound_cs_counseling_history');
-      if (stored) {
-        try {
-          return new Map(JSON.parse(stored));
-        } catch (e) {
-          return new Map();
+        for (const prefix of PREFIXES) {
+          const procSnap = await get(dbRef(db, prefix + '/processing_history'));
+          if (procSnap.exists()) {
+            procSnap.forEach((dateSnap) => {
+              const dateKey = dateSnap.key;
+              if (!/^\d{8}$/.test(dateKey)) return;
+              dateSnap.forEach((idSnap) => {
+                const id = idSnap.key;
+                const arr = [];
+                idSnap.forEach((child) => arr.push(child.val()));
+                if (arr.length) procMap.set(`${prefix}_${dateKey}_${id}`, arr.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+              });
+            });
+          }
         }
-      }
-      return new Map();
-    }
-
-    function saveCounselingHistoryToStorage(map) {
-      try {
-        const array = Array.from(map.entries());
-        localStorage.setItem('outbound_cs_counseling_history', JSON.stringify(array));
-      } catch (e) {
-        console.error('상담이력 저장 실패:', e);
+        processingHistoryMap = procMap;
+      } catch (err) {
+        console.error('처리내역 로드 오류:', err);
       }
     }
 
@@ -473,9 +458,33 @@
       return new Map();
     }
 
-    let processingHistoryMap = loadProcessingHistoryFromStorage();
-    let counselingHistoryMap = loadCounselingHistoryFromStorage();
+    let processingHistoryMap = new Map();
     let distributionHistoryMap = loadDistributionHistoryFromStorage();
+
+    // 유선안내완료 여부: processing history에서 최신 변경 기준 (체크→해제 시 현재 미완료로 판정)
+    function isCallCompleteForKey(processingHistory) {
+      if (!Array.isArray(processingHistory) || processingHistory.length === 0) return false;
+      const sorted = [...processingHistory].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      for (const h of sorted) {
+        if (h.changes && typeof h.changes === 'string') {
+          if (h.changes.includes('유선안내완료: 체크')) return true;
+          if (h.changes.includes('유선안내완료: 해제')) return false;
+        }
+      }
+      return false;
+    }
+    // 최종미연결 여부: processing history에서 최신 변경 기준
+    function isFinalUnreachedForKey(processingHistory) {
+      if (!Array.isArray(processingHistory) || processingHistory.length === 0) return false;
+      const sorted = [...processingHistory].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      for (const h of sorted) {
+        if (h.changes && typeof h.changes === 'string') {
+          if (h.changes.includes('최종미연결: 체크')) return true;
+          if (h.changes.includes('최종미연결: 해제')) return false;
+        }
+      }
+      return false;
+    }
 
     function normalizePhone(v) {
       return (v || '').replace(/\D/g, '');
@@ -694,6 +703,7 @@
           const snap = await get(dbRef(db, prefix + '/submissions_meta'));
           metaSnaps[prefix] = snap;
         }
+        await loadProcessingHistoryFromFirebase();
         applyMetaAndRender();
       } catch (err) {
         listEl.innerHTML = '<p class="msg error">로드 실패: ' + (err.message || err) + '</p>';
@@ -706,27 +716,43 @@
       
       // 아웃바운드 상담원은 본인에게 분배된 건만 보여야 함
       if (currentUserEmail && ALLOWED_EMAILS.some(e => e.toLowerCase() === currentUserEmail.toLowerCase())) {
-        // 최신 분배 이력 로드
         distributionHistoryMap = loadDistributionHistoryFromStorage();
         base = base.filter((d) => {
           const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
           const history = distributionHistoryMap.get(key) || [];
-          if (!Array.isArray(history) || history.length === 0) {
-            return false; // 분배되지 않은 건은 보이지 않음
-          }
+          if (!Array.isArray(history) || history.length === 0) return false;
           const latest = history[history.length - 1];
-          // 본인에게 분배된 건만 (대소문자 무시)
           return latest && latest.account && latest.account.toLowerCase() === currentUserEmail.toLowerCase();
         });
       }
-      
+
+      // processing history 기반 판정 (Firebase에서 로드)
       if (viewFilter !== 'all') {
         if (viewFilter === 'proofError') {
           base = base.filter((d) => !!d.proofError);
         } else if (viewFilter === 'noRefundExchange') {
           base = base.filter((d) => !d.refundDone && !d.exchangeDone);
         } else if (viewFilter === 'noCallComplete') {
-          base = base.filter((d) => !d.callComplete);
+          base = base.filter((d) => {
+            const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
+            const ph = processingHistoryMap.get(key) || [];
+            const complete = ph.length > 0 ? isCallCompleteForKey(ph) : (!!d.callComplete);
+            return !complete;
+          });
+        } else if (viewFilter === 'callComplete') {
+          base = base.filter((d) => {
+            const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
+            const ph = processingHistoryMap.get(key) || [];
+            const complete = ph.length > 0 ? isCallCompleteForKey(ph) : (!!d.callComplete);
+            return complete;
+          });
+        } else if (viewFilter === 'finalUnreached') {
+          base = base.filter((d) => {
+            const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
+            const ph = processingHistoryMap.get(key) || [];
+            const unreached = ph.length > 0 ? isFinalUnreachedForKey(ph) : (!!d.finalUnreached);
+            return unreached;
+          });
         }
       }
       if (!searchFilters.name && !searchFilters.contact && !searchFilters.customsCode && !searchFilters.uniqueCode) return base;
@@ -777,9 +803,9 @@
     
     const viewFilterSelect = document.getElementById('viewFilterSelect');
     if (viewFilterSelect) {
-      viewFilter = viewFilterSelect.value || 'all';
+      viewFilter = viewFilterSelect.value || 'noCallComplete';
       viewFilterSelect.addEventListener('change', () => {
-        viewFilter = viewFilterSelect.value || 'all';
+        viewFilter = viewFilterSelect.value || 'noCallComplete';
         paginationPage = 1;
         renderTable();
       });
@@ -792,9 +818,7 @@
       return codes.map(code => ({ productName: '', batchNumber: '', uniqueCode: code || '' }));
     }
 
-    // 처리내역 기록 함수 (목업 - 로컬 메모리 저장)
-    // TODO: 확정 후 주석 해제 필요 - Firebase 저장
-    /*
+    // 처리내역 기록 함수 (Firebase 저장)
     async function addProcessingHistory(id, dateKey, prefix, changes) {
       if (!db || !currentUserEmail) return;
       const historyPath = prefix + '/processing_history/' + dateKey + '/' + id;
@@ -810,30 +834,8 @@
         console.error('처리내역 기록 오류:', err);
       }
     }
-    */
-    // 목업: localStorage에 저장
-    async function addProcessingHistory(id, dateKey, prefix, changes) {
-      if (!currentUserEmail) return;
-      const key = `${prefix}_${dateKey}_${id}`;
-      if (!processingHistoryMap.has(key)) {
-        processingHistoryMap.set(key, []);
-      }
-      const historyItem = {
-        account: currentUserEmail,
-        timestamp: Date.now(),
-        changes: changes
-      };
-      processingHistoryMap.get(key).push(historyItem);
-      // 최신순 정렬
-      processingHistoryMap.get(key).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      saveProcessingHistoryToStorage(processingHistoryMap);
-      console.log('[목업] 처리내역 기록:', { id, dateKey, prefix, changes, account: currentUserEmail });
-      return Promise.resolve();
-    }
 
-    // 처리내역 로드 함수 (목업 - 로컬 메모리에서 로드)
-    // TODO: 확정 후 주석 해제 필요 - Firebase에서 로드
-    /*
+    // 처리내역 로드 함수 (Firebase에서 로드)
     async function loadProcessingHistory(id, dateKey, prefix) {
       if (!db) return [];
       const historyPath = prefix + '/processing_history/' + dateKey + '/' + id;
@@ -850,41 +852,38 @@
         return [];
       }
     }
-    */
-    // 목업: localStorage에서 로드
-    async function loadProcessingHistory(id, dateKey, prefix) {
-      processingHistoryMap = loadProcessingHistoryFromStorage(); // 최신 데이터 로드
-      const key = `${prefix}_${dateKey}_${id}`;
-      const history = processingHistoryMap.get(key) || [];
-      return Array.isArray(history) ? history.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)) : [];
-    }
 
-    // 상담이력 추가 함수 (목업 - 로컬 메모리 저장)
-    async function addCounselingHistory(id, dateKey, prefix, content) {
-      if (!currentUserEmail || !content || !content.trim()) return;
-      const key = `${prefix}_${dateKey}_${id}`;
-      if (!counselingHistoryMap.has(key)) {
-        counselingHistoryMap.set(key, []);
+    // 상담이력 추가 (Firebase submissions/submissions_meta에 저장)
+    async function addCounselingHistoryToFirebase(id, dateKey, prefix, content, isLegacy) {
+      if (!db || !currentUserEmail || !content || !content.trim()) return;
+      const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
+      const metaPath = dateKey ? prefix + '/submissions_meta/' + dateKey + '/' + id : '';
+      try {
+        const existingHistory = await loadCounselingHistory(id, dateKey, prefix);
+        const newHistoryItem = { account: currentUserEmail, timestamp: Date.now(), content: content.trim() };
+        const updatedHistory = [...existingHistory, newHistoryItem].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        await update(dbRef(db, subPath), { counselingHistory: updatedHistory });
+        if (metaPath) await update(dbRef(db, metaPath), { counselingHistory: updatedHistory });
+      } catch (err) {
+        console.error('상담이력 저장 오류:', err);
+        throw err;
       }
-      const historyItem = {
-        account: currentUserEmail,
-        timestamp: Date.now(),
-        content: content.trim()
-      };
-      counselingHistoryMap.get(key).push(historyItem);
-      // 최신순 정렬
-      counselingHistoryMap.get(key).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      saveCounselingHistoryToStorage(counselingHistoryMap);
-      console.log('[목업] 상담이력 추가:', { id, dateKey, prefix, content, account: currentUserEmail });
-      return Promise.resolve();
     }
 
-    // 상담이력 로드 함수 (목업 - 로컬 메모리에서 로드)
+    // 상담이력 로드 함수 (Firebase submissions_meta에서 로드)
     async function loadCounselingHistory(id, dateKey, prefix) {
-      counselingHistoryMap = loadCounselingHistoryFromStorage(); // 최신 데이터 로드
-      const key = `${prefix}_${dateKey}_${id}`;
-      const history = counselingHistoryMap.get(key) || [];
-      return Array.isArray(history) ? history.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)) : [];
+      if (!db) return [];
+      const metaPath = prefix + '/submissions_meta/' + dateKey + '/' + id;
+      try {
+        const snap = await get(dbRef(db, metaPath));
+        if (!snap.exists()) return [];
+        const data = snap.val();
+        const hist = data.counselingHistory;
+        return Array.isArray(hist) ? hist.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)) : [];
+      } catch (err) {
+        console.error('상담이력 로드 오류:', err);
+        return [];
+      }
     }
 
     function renderTable() {
@@ -942,7 +941,8 @@
       listEl.innerHTML = tableHtml + paginationHtml;
       const infoP = document.createElement('p');
       infoP.className = 'msg info';
-      const filterLabel = viewFilter === 'all' ? '' : (viewFilter === 'proofError' ? '증빙오류(반려)' : (viewFilter === 'noRefundExchange' ? '환불·교환 미체크' : '유선안내 미완료'));
+      const filterLabels = { all: '', proofError: '증빙오류(반려)', noRefundExchange: '환불·교환 미체크', callComplete: '유선안내완료', noCallComplete: '유선안내 미완료', finalUnreached: '최종미연결' };
+      const filterLabel = filterLabels[viewFilter] || '';
       const baseMsg = (searchFilters.name || searchFilters.contact || searchFilters.customsCode || searchFilters.uniqueCode) ? ('검색 결과 ' + total + '건 (전체 ' + allItems.length + '건 중)') : (filterLabel ? '[' + filterLabel + '] ' + total + '건' : '전체 ' + total + '건');
       infoP.textContent = baseMsg + ', 페이지당 30건. 상세에서 고객정보·제품·체크박스·상담이력·처리내역 확인·수정.';
       listEl.insertBefore(infoP, listEl.firstChild);
@@ -1061,39 +1061,20 @@
         if (!id || !prefix) return;
         if (!isLegacy && !dateKey) return;
         
-        // TODO: 확정 후 주석 해제 필요 - Firebase 저장 기능
-        /*
-        const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
-        const metaPath = dateKey ? (prefix + '/submissions_meta/' + dateKey + '/' + id) : '';
         try {
-          // 상담이력 배열로 저장
-          const existingHistory = await loadCounselingHistory(id, dateKey, prefix);
-          const newHistoryItem = {
-            account: currentUserEmail,
-            timestamp: Date.now(),
-            content: counselingContent.trim()
-          };
-          const updatedHistory = [...existingHistory, newHistoryItem];
-          await update(dbRef(db, subPath), { counselingHistory: updatedHistory });
-          if (metaPath) await update(dbRef(db, metaPath), { counselingHistory: updatedHistory });
+          await addCounselingHistoryToFirebase(id, dateKey, prefix, counselingContent, isLegacy);
           await addProcessingHistory(id, dateKey, prefix, '상담이력 기재');
+          await loadProcessingHistoryFromFirebase();
           alert('상담이력이 저장되었습니다.');
           closeCounselingModal();
           renderTable();
+          textareaEl.value = '';
+          await refreshCounselingHistoryList(id, dateKey, prefix);
+          textareaEl.focus();
         } catch (err) {
           console.error('저장 오류:', err);
           alert('저장 실패: ' + (err.message || err));
         }
-        */
-        
-        // 목업: 로컬 메모리에 상담이력 추가
-        await addCounselingHistory(id, dateKey, prefix, counselingContent);
-        await addProcessingHistory(id, dateKey, prefix, '상담이력 기재');
-        
-        // 텍스트 영역 초기화하고 기존 이력 목록 새로고침
-        textareaEl.value = '';
-        await refreshCounselingHistoryList(id, dateKey, prefix);
-        textareaEl.focus();
       });
       
       // 모달 배경 클릭 시 닫기
@@ -1154,12 +1135,17 @@
       const rC = d.refundDone ? ' checked' : '';
       const eC = d.exchangeDone ? ' checked' : '';
       const iC = d.invalidInfo ? ' checked' : '';
-      const callC = d.callComplete ? ' checked' : '';
-      const finalUC = d.finalUnreached ? ' checked' : '';
       const dmLocked = !!(d.refundComplete || d.exchangeComplete);
       const dmLockedAttr = dmLocked ? ' disabled title="처리 완료 건 — 수정 불가"' : '';
 
       const processingHistory = await loadProcessingHistory(d.id, d._dateKey || '', d._prefix || '');
+      // 유선안내완료·최종미연결: processing history 기준 (목업 시 새로고침 후에도 유지)
+      const effectiveCallComplete = processingHistory.length > 0 ? isCallCompleteForKey(processingHistory) : (!!d.callComplete);
+      const effectiveFinalUnreached = processingHistory.length > 0 ? isFinalUnreachedForKey(processingHistory) : (!!d.finalUnreached);
+      const callC = effectiveCallComplete ? ' checked' : '';
+      const finalUC = effectiveFinalUnreached ? ' checked' : '';
+      d._effectiveCallComplete = effectiveCallComplete;
+      d._effectiveFinalUnreached = effectiveFinalUnreached;
       const counselingHistory = await loadCounselingHistory(d.id, d._dateKey || '', d._prefix || '');
 
       let statusReadonly = [];
@@ -1278,8 +1264,8 @@
           refundDone: d.refundDone || false,
           exchangeDone: d.exchangeDone || false,
           invalidInfo: d.invalidInfo || false,
-          callComplete: d.callComplete || false,
-          finalUnreached: d.finalUnreached || false
+          callComplete: (d._effectiveCallComplete !== undefined ? d._effectiveCallComplete : d.callComplete) || false,
+          finalUnreached: (d._effectiveFinalUnreached !== undefined ? d._effectiveFinalUnreached : d.finalUnreached) || false
         };
         
         const newValues = { refundDone, exchangeDone, invalidInfo, callComplete, finalUnreached };
@@ -1300,8 +1286,6 @@
           newValues.invalidInfo = oldValues.invalidInfo;
         }
         
-        // TODO: 확정 후 주석 해제 필요 - Firebase 저장 기능
-        /*
         try {
           await update(dbRef(db, subPath), newValues);
           if (metaPath) await update(dbRef(db, metaPath), newValues);
@@ -1317,8 +1301,10 @@
             it.invalidInfo = newValues.invalidInfo;
             it.sixCansOrMore = newValues.sixCansOrMore;
             it.callComplete = newValues.callComplete;
+            it.finalUnreached = newValues.finalUnreached;
           }
           
+          await loadProcessingHistoryFromFirebase();
           alert('저장되었습니다.');
           closeDetailModal();
           renderTable();
@@ -1326,23 +1312,6 @@
           console.error('저장 오류:', err);
           alert('저장 실패: ' + (err.message || err));
         }
-        */
-        
-        // 목업: 로컬 상태만 업데이트 (Firebase 저장 없음, 화면 새로고침 없음)
-        console.log('[목업] 모달에서 저장:', { id, dateKey, prefix, newValues, changes });
-        if (changes.length > 0) {
-          await addProcessingHistory(id, dateKey, prefix, changes.join(', '));
-        }
-        const it = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
-        if (it) {
-          it.refundDone = newValues.refundDone;
-          it.exchangeDone = newValues.exchangeDone;
-          it.invalidInfo = newValues.invalidInfo;
-          it.callComplete = newValues.callComplete;
-          it.finalUnreached = newValues.finalUnreached;
-        }
-        // 목업 모드에서는 모달 닫지 않고 체크박스 상태만 유지됨
-        // closeDetailModal() 및 renderTable() 호출 제거
       };
       
       [cbRefund, cbExchange, cbInvalid, cbCallComplete, cbFinalUnreached].forEach(cb => {
@@ -1365,7 +1334,7 @@
           if (!id || !prefix) return;
           if (!d._isLegacy && !dateKey) return;
 
-          await addCounselingHistory(id, dateKey, prefix, content);
+          await addCounselingHistoryToFirebase(id, dateKey, prefix, content, !!d._isLegacy);
           await addProcessingHistory(id, dateKey, prefix, '상담이력 기재');
 
           const listEl = document.getElementById('dm-counseling-history-list');

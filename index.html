@@ -421,6 +421,19 @@
     <div class="photo-lightbox-counter" id="photoLightboxCounter" style="display: none;"></div>
   </div>
 
+  <!-- 상담이력/처리내역 조회 모달 (읽기 전용) -->
+  <div id="historyViewModal" class="detail-modal-overlay" aria-hidden="true">
+    <div class="detail-modal-box" style="max-width: 560px;">
+      <div class="detail-modal-header">
+        <span id="historyViewModalTitle">상담이력 / 처리내역</span>
+        <button type="button" class="detail-modal-close" id="historyViewModalClose">닫기</button>
+      </div>
+      <div class="detail-modal-body">
+        <div id="historyViewModalContent" style="padding: 16px; max-height: 400px; overflow-y: auto;"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- 소비기한 확인 모달 -->
   <div id="expiryModal" class="expiry-modal">
     <div class="expiry-modal-content">
@@ -891,7 +904,8 @@
         '<th>제품명(9)</th><th>제조번호(9)</th><th>고유번호(9)</th>' +
         '<th>제품명(10)</th><th>제조번호(10)</th><th>고유번호(10)</th>' +
         '<th>제품명(11)</th><th>제조번호(11)</th><th>고유번호(11)</th>' +
-        '<th>제품명(12)</th><th>제조번호(12)</th><th>고유번호(12)</th>';
+        '<th>제품명(12)</th><th>제조번호(12)</th><th>고유번호(12)</th>' +
+        '<th>유선안내완료</th><th>상담이력</th><th>처리내역</th>';
 
       let rowsHtml = '';
       pageItems.forEach((d) => {
@@ -958,6 +972,9 @@
           const uniqueCodeCellStyle = isUniqueCodeDuplicate ? ' style="background-color: #ffe0e0;"' : '';
           rowsHtml += '<td' + uniqueCodeCellStyle + '><span class="cell-text">' + escapeHtml(uniqueCode || '-') + '</span></td>';
         }
+        rowsHtml += '<td class="cell-flag">' + (d.callComplete ? 'Y' : '-') + '</td>';
+        rowsHtml += '<td><button type="button" class="btn btn-primary btn-counseling-view" style="font-size:11px;padding:2px 6px;" data-id="' + escapeAttr(d.id) + '" data-date-key="' + escapeAttr(dateKey) + '" data-prefix="' + escapeAttr(prefix) + '">상담이력</button></td>';
+        rowsHtml += '<td><button type="button" class="btn btn-primary btn-processing-view" style="font-size:11px;padding:2px 6px;" data-id="' + escapeAttr(d.id) + '" data-date-key="' + escapeAttr(dateKey) + '" data-prefix="' + escapeAttr(prefix) + '">처리내역</button></td>';
         rowsHtml += '</tr>';
       });
 
@@ -996,6 +1013,7 @@
 
       attachCheckboxListeners();
       attachPhotoViewButtons();
+      attachCounselingAndProcessingButtons();
       attachCellTooltips();
     }
 
@@ -1262,6 +1280,136 @@
           }
         });
       });
+    }
+
+    // 상담이력/처리내역 조회 (Firebase + localStorage 아웃바운드 목업 fallback)
+    function loadProcessingHistoryForView(prefix, dateKey, id) {
+      const key = prefix + '_' + dateKey + '_' + id;
+      try {
+        const stored = localStorage.getItem('outbound_cs_processing_history');
+        if (stored) {
+          const map = new Map(JSON.parse(stored));
+          const arr = map.get(key) || [];
+          return Array.isArray(arr) ? arr.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)) : [];
+        }
+      } catch (e) {}
+      return [];
+    }
+    function loadCounselingHistoryForView(prefix, dateKey, id) {
+      const key = prefix + '_' + dateKey + '_' + id;
+      try {
+        const stored = localStorage.getItem('outbound_cs_counseling_history');
+        if (stored) {
+          const map = new Map(JSON.parse(stored));
+          const arr = map.get(key) || [];
+          return Array.isArray(arr) ? arr.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)) : [];
+        }
+      } catch (e) {}
+      return [];
+    }
+    function formatHistoryDate(t) {
+      if (!t) return '-';
+      const d = typeof t === 'number' ? new Date(t) : new Date(t);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ' ' +
+        String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    }
+    async function openHistoryViewModal(type, d) {
+      const modal = document.getElementById('historyViewModal');
+      const titleEl = document.getElementById('historyViewModalTitle');
+      const contentEl = document.getElementById('historyViewModalContent');
+      if (!modal || !contentEl) return;
+      const id = d.id;
+      const dateKey = d._dateKey || '';
+      const prefix = d._prefix || '';
+      if (type === 'counseling') {
+        titleEl.textContent = '상담이력 — ' + (d.name || d.contact || id || '');
+        let data = d.counselingHistory;
+        if (Array.isArray(data)) {
+          const arr = data.length ? data : loadCounselingHistoryForView(prefix, dateKey, id);
+          if (arr.length === 0) {
+            contentEl.innerHTML = '<p style="color:#666;">등록된 상담이력이 없습니다.</p>';
+          } else {
+            contentEl.innerHTML = arr.map((h) =>
+              '<div style="margin-bottom:12px;padding:10px;background:#f0f7ff;border-radius:6px;border-left:4px solid #17a;">' +
+              '<div style="font-size:11px;color:#666;margin-bottom:4px;">' + formatHistoryDate(h.timestamp) + ' — ' + escapeHtml(h.account || '-') + '</div>' +
+              '<div style="font-size:13px;white-space:pre-wrap;">' + escapeHtml(h.content || '') + '</div></div>'
+            ).join('');
+          }
+        } else if (typeof data === 'string' && data.trim()) {
+          contentEl.innerHTML = '<div style="white-space:pre-wrap;">' + escapeHtml(data) + '</div>';
+        } else {
+          const arr = loadCounselingHistoryForView(prefix, dateKey, id);
+          if (arr.length === 0) {
+            contentEl.innerHTML = '<p style="color:#666;">등록된 상담이력이 없습니다.</p>';
+          } else {
+            contentEl.innerHTML = arr.map((h) =>
+              '<div style="margin-bottom:12px;padding:10px;background:#f0f7ff;border-radius:6px;border-left:4px solid #17a;">' +
+              '<div style="font-size:11px;color:#666;margin-bottom:4px;">' + formatHistoryDate(h.timestamp) + ' — ' + escapeHtml(h.account || '-') + '</div>' +
+              '<div style="font-size:13px;white-space:pre-wrap;">' + escapeHtml(h.content || '') + '</div></div>'
+            ).join('');
+          }
+        }
+      } else {
+        titleEl.textContent = '처리내역 — ' + (d.name || d.contact || id || '');
+        let arr = [];
+        if (db) {
+          const path = prefix + '/processing_history/' + dateKey + '/' + id;
+          try {
+            const snap = await get(dbRef(db, path));
+            if (snap.exists()) {
+              snap.forEach((childSnap) => { arr.push(childSnap.val()); });
+            }
+          } catch (e) {}
+        }
+        if (arr.length === 0) arr = loadProcessingHistoryForView(prefix, dateKey, id);
+        arr.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        if (arr.length === 0) {
+          contentEl.innerHTML = '<p style="color:#666;">등록된 처리내역이 없습니다.</p>';
+        } else {
+          contentEl.innerHTML = arr.map((h) =>
+            '<div style="margin-bottom:12px;padding:10px;background:#f9f9f9;border-radius:6px;border-left:4px solid #17a;">' +
+            '<div style="font-size:11px;color:#666;margin-bottom:4px;">' + formatHistoryDate(h.timestamp) + ' — ' + escapeHtml(h.account || '-') + '</div>' +
+            '<div style="font-size:13px;">' + escapeHtml(h.changes || '') + '</div></div>'
+          ).join('');
+        }
+      }
+      modal.style.display = 'flex';
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden', 'false');
+    }
+    function closeHistoryViewModal() {
+      const modal = document.getElementById('historyViewModal');
+      if (modal) {
+        modal.style.display = 'none';
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+      }
+    }
+    function attachCounselingAndProcessingButtons() {
+      listEl.querySelectorAll('.btn-counseling-view').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          const id = btn.getAttribute('data-id');
+          const dateKey = btn.getAttribute('data-date-key') || '';
+          const prefix = btn.getAttribute('data-prefix') || '';
+          const d = allItems.find((it) => String(it.id) === String(id) && (it._dateKey || '') === dateKey && it._prefix === prefix);
+          if (d) await openHistoryViewModal('counseling', d);
+        });
+      });
+      listEl.querySelectorAll('.btn-processing-view').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          const id = btn.getAttribute('data-id');
+          const dateKey = btn.getAttribute('data-date-key') || '';
+          const prefix = btn.getAttribute('data-prefix') || '';
+          const d = allItems.find((it) => String(it.id) === String(id) && (it._dateKey || '') === dateKey && it._prefix === prefix);
+          if (d) await openHistoryViewModal('processing', d);
+        });
+      });
+      const closeBtn = document.getElementById('historyViewModalClose');
+      if (closeBtn) closeBtn.addEventListener('click', closeHistoryViewModal);
+      const modal = document.getElementById('historyViewModal');
+      if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) closeHistoryViewModal(); });
     }
 
     (function initDetailModalClose() {

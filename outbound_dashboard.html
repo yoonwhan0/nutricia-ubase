@@ -8,6 +8,7 @@
   <style>
     .dashboard-wrap { max-width: 1400px; margin: 0 auto; padding: 20px; }
     .dashboard-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+    .dashboard-header .header-right { display: flex; align-items: center; gap: 12px; }
     .dashboard-header h1 { margin: 0; font-size: 20px; }
     .back-link { color: #0066cc; text-decoration: none; font-weight: 600; }
     .back-link:hover { text-decoration: underline; }
@@ -190,6 +191,43 @@
       margin-top: 8px;
       text-align: center;
     }
+    /* 탭 UX */
+    .dashboard-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 20px;
+      border-bottom: 2px solid #e0e0e0;
+      padding-bottom: 0;
+    }
+    .dashboard-tab {
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #666;
+      background: #f5f5f5;
+      border: none;
+      border-radius: 8px 8px 0 0;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .dashboard-tab:hover { color: #333; background: #eee; }
+    .dashboard-tab.active {
+      color: #17a;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-bottom: 2px solid #fff;
+      margin-bottom: -2px;
+    }
+    .dashboard-tab-content { display: none; }
+    .dashboard-tab-content.active { display: block; }
+    /* 카드 그룹 */
+    .card-group-title { font-size: 15px; font-weight: 700; color: #1a1a1a; margin: 0 0 16px 0; padding-bottom: 8px; border-bottom: 2px solid #17a; }
+    .flow-step { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+    .flow-step-num { width: 28px; height: 28px; background: #17a; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+    .flow-step-desc { font-size: 13px; color: #555; }
+    .stats-summary { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+    .stats-summary-item { background: #f8f9fa; padding: 12px 20px; border-radius: 8px; border-left: 4px solid #17a; font-size: 13px; }
+    .stats-summary-item strong { display: block; font-size: 18px; color: #333; margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -207,56 +245,71 @@
   <!-- 대시보드 화면 -->
   <div id="dashboardView" class="dashboard-wrap" style="display: none;">
     <div class="dashboard-header">
-      <h1>아웃바운드 모니터링 대시보드</h1>
-      <div style="display: flex; gap: 12px; align-items: center;">
+      <div>
+        <h1>아웃바운드 모니터링 대시보드</h1>
+        <a href="index.html" class="back-link">← 유베이스 목록으로</a>
+      </div>
+      <div class="header-right">
         <span id="adminUserEmail" style="font-size: 12px; color: #666;"></span>
         <button type="button" class="toolbar button" id="adminLogoutBtn" style="background: #666; color: #fff; font-size: 12px;">로그아웃</button>
       </div>
     </div>
 
-    <!-- 상담사별 실적 통계 및 분배 이력 -->
-    <div class="dashboard-section">
-      <div class="dashboard-card">
-        <h3>상담사별 실적 통계 및 분배 이력</h3>
-        <p class="hint">날짜별, 상담사별로 분배된 접수건과 처리 완료 현황을 직관적으로 조회합니다. 상담사별 분배건수, 유선안내완료건수, 상담이력 작성 건수, 처리율을 확인할 수 있습니다.</p>
-        <div class="toolbar">
-          <label>기간:</label>
-          <input type="date" id="statsStartDate" value="">
-          <span>~</span>
-          <input type="date" id="statsEndDate" value="">
-          <button type="button" id="loadStatsBtn">통계 조회</button>
-          <button type="button" id="downloadStatsBtn" style="background: #28a745; display: none;">CSV 다운로드</button>
-        </div>
-        <div id="statsLoading" class="loading" style="display: none;">통계 조회 중…</div>
-        <div id="statsResult"></div>
+    <div class="dashboard-tabs">
+      <button type="button" class="dashboard-tab active" data-tab="distribution">물량 분배</button>
+      <button type="button" class="dashboard-tab" data-tab="stats">통계·이력</button>
+    </div>
+
+    <!-- 탭1: 물량 분배 (유형별 분리) -->
+    <div id="tab-distribution" class="dashboard-tab-content active">
+    <div class="distribution-account-select" style="margin-bottom: 20px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e0e0e0;">
+      <div style="font-size: 12px; font-weight: 600; margin-bottom: 8px; color: #555;">📌 자동 분배할 상담사 (체크한 계정에게만 균등 분배)</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center;">
+        <label style="font-size: 12px; color: #666; margin-right: 8px;"><input type="checkbox" id="distAccountAll" checked> 전체</label>
+        <span id="distAccountCheckboxes"></span>
       </div>
     </div>
 
-    <!-- 아웃바운드 물량 분배 -->
-    <div class="dashboard-section distribution-section">
-      <div class="dashboard-card">
-        <h3>아웃바운드 물량 분배</h3>
-        <p class="hint">현재 기준으로 접수건을 조회하고 상담사별로 분배할 수 있습니다. 기량이 떨어지는 상담사의 물량을 잘하는 상담사에게 재분배할 수 있습니다.</p>
+    <!-- 유형1: 환불/교환 미체크 -->
+    <div class="dashboard-section">
+      <div class="dashboard-card" style="border-left: 4px solid #17a;">
+        <h3 class="card-group-title">환불/교환 미체크 — 조회 및 분배</h3>
+        <p class="hint">환불·교환 체크가 안 된 접수건을 조회하고 상담사에게 분배합니다.</p>
         <div class="toolbar">
-          <label>분배 대상:</label>
-          <select id="distributionFilterSelect">
-            <option value="noCheck">환불/교환 미체크</option>
-            <option value="proofError">증빙오류(반려)</option>
-          </select>
-          <button type="button" id="loadDistributionBtn">전체 조회</button>
-          <button type="button" id="autoDistributeBtn" style="background: #ffc107; color: #333;">자동 균등 분배</button>
-          <button type="button" id="selectiveDistributeBtn" style="background: #17a; color: #fff;">선택 분배</button>
+          <button type="button" class="load-dist-btn" data-type="noCheck">전체 조회</button>
+          <button type="button" class="auto-dist-btn" data-type="noCheck" style="background: #ffc107; color: #333;">자동 균등 분배</button>
+          <button type="button" class="select-dist-btn" data-type="noCheck" style="background: #17a; color: #fff;">선택 분배</button>
         </div>
-        <div id="distributionLoading" class="loading" style="display: none;">접수건 조회 중…</div>
-        <div id="distributionResult"></div>
+        <div class="dist-loading" data-type="noCheck" style="display: none;">조회 중…</div>
+        <div class="dist-result" data-type="noCheck"></div>
       </div>
     </div>
 
-    <!-- 상담사별 잔여건 및 이관 -->
+    <!-- 유형2: 증빙오류(반려) -->
+    <div class="dashboard-section">
+      <div class="dashboard-card" style="border-left: 4px solid #dc3545;">
+        <h3 class="card-group-title">증빙오류(반려) — 조회 및 분배</h3>
+        <p class="hint">증빙오류로 반려된 접수건을 조회하고 상담사에게 분배합니다.</p>
+        <div class="toolbar">
+          <button type="button" class="load-dist-btn" data-type="proofError">전체 조회</button>
+          <button type="button" class="auto-dist-btn" data-type="proofError" style="background: #ffc107; color: #333;">자동 균등 분배</button>
+          <button type="button" class="select-dist-btn" data-type="proofError" style="background: #17a; color: #fff;">선택 분배</button>
+        </div>
+        <div class="dist-loading" data-type="proofError" style="display: none;">조회 중…</div>
+        <div class="dist-result" data-type="proofError"></div>
+      </div>
+    </div>
+
+    <div class="dashboard-section">
+      <div class="toolbar">
+        <button type="button" id="resetDistributionBtn" style="background: #666; color: #fff;" title="모든 상담사의 배정을 일괄 회수">전체 분배 초기화</button>
+      </div>
+    </div>
+
     <div class="dashboard-section">
       <div class="dashboard-card">
-        <h3>상담사별 잔여건 및 이관</h3>
-        <p class="hint">각 상담사에게 분배된 미처리 건을 확인하고, 실적이 떨어지는 상담사의 잔여건을 다른 상담사에게 이관할 수 있습니다.</p>
+        <h3 class="card-group-title">2. 상담사별 잔여건 및 이관</h3>
+        <p class="hint">분배된 미처리 건을 확인하고, 실적이 떨어지는 상담사의 잔여건을 다른 상담사에게 이관할 수 있습니다.</p>
         <div class="toolbar">
           <button type="button" id="loadRemainingBtn">잔여건 조회</button>
         </div>
@@ -264,36 +317,46 @@
         <div id="remainingResult"></div>
       </div>
     </div>
+    </div>
 
-    <!-- 분배 이력 (상세 통계) -->
+    <!-- 탭2: 통계·이력 -->
+    <div id="tab-stats" class="dashboard-tab-content">
     <div class="dashboard-section">
       <div class="dashboard-card">
-        <h3>분배 이력 및 상세 통계</h3>
-        <p class="hint">날짜별, 상담사별로 분배된 접수건과 처리 완료 현황을 직관적으로 조회합니다.</p>
+        <h3 class="card-group-title">상담사별 실적·분배 이력</h3>
+        <p class="hint">기간을 선택해 상담사별 분배·처리 현황을 조회합니다. 상담사별 요약 또는 날짜별 상세 보기를 선택할 수 있습니다.</p>
         <div class="toolbar">
           <label>기간:</label>
-          <input type="date" id="historyStartDate" value="">
+          <input type="date" id="statsStartDate" value="">
           <span>~</span>
-          <input type="date" id="historyEndDate" value="">
+          <input type="date" id="statsEndDate" value="">
           <label style="margin-left: 12px;">상담사:</label>
           <select id="historyAccountSelect">
             <option value="">전체</option>
-            <option value="cs1@ubase.co.kr">cs1@ubase.co.kr</option>
-            <option value="cs2@ubase.co.kr">cs2@ubase.co.kr</option>
-            <option value="cs3@ubase.co.kr">cs3@ubase.co.kr</option>
-            <option value="cs4@ubase.co.kr">cs4@ubase.co.kr</option>
-            <option value="cs5@ubase.co.kr">cs5@ubase.co.kr</option>
-            <option value="cs6@ubase.co.kr">cs6@ubase.co.kr</option>
-            <option value="cs7@ubase.co.kr">cs7@ubase.co.kr</option>
-            <option value="cs8@ubase.co.kr">cs8@ubase.co.kr</option>
-            <option value="cs9@ubase.co.kr">cs9@ubase.co.kr</option>
-            <option value="cs10@ubase.co.kr">cs10@ubase.co.kr</option>
+            <option value="cs1@ubase.co.kr">cs1</option>
+            <option value="cs2@ubase.co.kr">cs2</option>
+            <option value="cs3@ubase.co.kr">cs3</option>
+            <option value="cs4@ubase.co.kr">cs4</option>
+            <option value="cs5@ubase.co.kr">cs5</option>
+            <option value="cs6@ubase.co.kr">cs6</option>
+            <option value="cs7@ubase.co.kr">cs7</option>
+            <option value="cs8@ubase.co.kr">cs8</option>
+            <option value="cs9@ubase.co.kr">cs9</option>
+            <option value="cs10@ubase.co.kr">cs10</option>
           </select>
-          <button type="button" id="loadHistoryBtn">이력 조회</button>
+          <label style="margin-left: 12px;">보기:</label>
+          <select id="statsViewMode">
+            <option value="byAccount">상담사별 요약</option>
+            <option value="byDate">날짜별 상세</option>
+          </select>
+          <button type="button" id="loadStatsBtn">조회</button>
+          <button type="button" id="loadHistoryBtn" style="display: none;">이력 조회</button>
+          <button type="button" id="downloadStatsBtn" style="background: #28a745; display: none;">CSV</button>
         </div>
-        <div id="historyLoading" class="loading" style="display: none;">이력 조회 중…</div>
-        <div id="historyResult"></div>
+        <div id="statsLoading" class="loading" style="display: none;">조회 중…</div>
+        <div id="statsResult"></div>
       </div>
+    </div>
     </div>
   </div>
 
@@ -381,27 +444,19 @@
     const downloadStatsBtn = document.getElementById('downloadStatsBtn');
     const statsLoading = document.getElementById('statsLoading');
     const statsResult = document.getElementById('statsResult');
-    const distributionFilterSelect = document.getElementById('distributionFilterSelect');
-    const loadDistributionBtn = document.getElementById('loadDistributionBtn');
-    const autoDistributeBtn = document.getElementById('autoDistributeBtn');
-    const distributionLoading = document.getElementById('distributionLoading');
-    const distributionResult = document.getElementById('distributionResult');
-    const selectiveDistributeBtn = document.getElementById('selectiveDistributeBtn');
+    const resetDistributionBtn = document.getElementById('resetDistributionBtn');
     const loadRemainingBtn = document.getElementById('loadRemainingBtn');
     const remainingLoading = document.getElementById('remainingLoading');
     const remainingResult = document.getElementById('remainingResult');
-    const historyStartDate = document.getElementById('historyStartDate');
-    const historyEndDate = document.getElementById('historyEndDate');
     const historyAccountSelect = document.getElementById('historyAccountSelect');
     const loadHistoryBtn = document.getElementById('loadHistoryBtn');
-    const historyLoading = document.getElementById('historyLoading');
-    const historyResult = document.getElementById('historyResult');
     const assignModal = document.getElementById('assignModal');
     const assignModalClose = document.getElementById('assignModalClose');
     const assignModalCancelBtn = document.getElementById('assignModalCancelBtn');
     const assignModalConfirmBtn = document.getElementById('assignModalConfirmBtn');
     const assignModalInfo = document.getElementById('assignModalInfo');
     const assignAccountSelect = document.getElementById('assignAccountSelect');
+    const statsViewMode = document.getElementById('statsViewMode');
     const loginLock = document.getElementById('loginLock');
     const dashboardView = document.getElementById('dashboardView');
     const loginEmail = document.getElementById('loginEmail');
@@ -409,12 +464,39 @@
     const loginBtn = document.getElementById('loginBtn');
     const loginError = document.getElementById('loginError');
 
+    // 분배 대상 계정 체크박스 초기화
+    const distAccountCheckboxes = document.getElementById('distAccountCheckboxes');
+    const distAccountAll = document.getElementById('distAccountAll');
+    if (distAccountCheckboxes) {
+      CS_ACCOUNTS.forEach((email) => {
+        const label = document.createElement('label');
+        label.style.cssText = 'font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; margin: 0;';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.className = 'dist-account-cb';
+        cb.value = email;
+        cb.checked = true;
+        cb.style.marginRight = '4px';
+        cb.addEventListener('change', () => {
+          const allCbs = document.querySelectorAll('.dist-account-cb');
+          const checkedCount = Array.from(allCbs).filter((c) => c.checked).length;
+          if (distAccountAll) distAccountAll.checked = checkedCount === allCbs.length;
+        });
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(email.replace('@ubase.co.kr', '')));
+        distAccountCheckboxes.appendChild(label);
+      });
+    }
+    if (distAccountAll) {
+      distAccountAll.addEventListener('change', () => {
+        document.querySelectorAll('.dist-account-cb').forEach((cb) => { cb.checked = distAccountAll.checked; });
+      });
+    }
+
     // 오늘 날짜로 초기화
     const today = new Date();
     statsStartDate.value = today.toISOString().split('T')[0];
     statsEndDate.value = today.toISOString().split('T')[0];
-    if (historyStartDate) historyStartDate.value = today.toISOString().split('T')[0];
-    if (historyEndDate) historyEndDate.value = today.toISOString().split('T')[0];
 
     // 로컬 스토리지: 분배 이력 저장 (목업용 - 대시보드가 관리)
     // key: `${prefix}_${dateKey}_${id}` -> [{ account, timestamp, type: 'assign' | 'reassign' | 'complete' }]
@@ -440,35 +522,96 @@
       }
     }
 
-    // 처리 내역은 CS 계정이 작성하고, 대시보드는 읽기만 함
-    function loadProcessingHistoryFromStorage() {
-      const stored = localStorage.getItem('outbound_cs_processing_history');
-      if (stored) {
-        try {
-          return new Map(JSON.parse(stored));
-        } catch (e) {
-          return new Map();
-        }
+    // 계정별 회수: 해당 상담사에게 배정된 건을 모두 미분배로
+    function recallDistributionByAccount(account) {
+      if (!account || !confirm(account + '에게 배정된 건을 모두 회수하시겠습니까?\n\n해당 상담사의 목록에서 사라지며, 미분배 풀로 돌아갑니다.')) {
+        return;
       }
-      return new Map();
+      distributionHistoryMap = loadDistributionHistoryFromStorage();
+      let recallCount = 0;
+      const keysToRemove = [];
+      distributionHistoryMap.forEach((history, key) => {
+        if (!Array.isArray(history) || history.length === 0) return;
+        const latest = history[history.length - 1];
+        if (latest && latest.account && latest.account.toLowerCase() === account.toLowerCase()) {
+          keysToRemove.push(key);
+          recallCount++;
+        }
+      });
+      keysToRemove.forEach((k) => distributionHistoryMap.delete(k));
+      saveDistributionHistoryToStorage(distributionHistoryMap);
+      console.log('[목업] 계정별 회수:', { account, recallCount });
+      alert(account + ' 배정 ' + recallCount + '건을 회수했습니다.');
+
+      loadDistribution('noCheck');
+      loadDistribution('proofError');
+      loadRemaining();
+      loadHistory();
+      loadStats();
     }
 
-    // 상담 이력은 CS 계정이 작성하고, 대시보드는 읽기만 함
-    function loadCounselingHistoryFromStorage() {
-      const stored = localStorage.getItem('outbound_cs_counseling_history');
-      if (stored) {
-        try {
-          return new Map(JSON.parse(stored));
-        } catch (e) {
-          return new Map();
-        }
+    // 전체 초기화: 분배 이력 전체 삭제 (모든 상담사 배정 회수)
+    function resetDistribution() {
+      if (!confirm('모든 상담사의 배정을 회수하시겠습니까?\n\n전체 접수건이 미분배 상태로 돌아가며, 상담원 페이지 목록도 비워집니다.')) {
+        return;
       }
-      return new Map();
+      distributionHistoryMap = new Map();
+      saveDistributionHistoryToStorage(distributionHistoryMap);
+      console.log('[목업] 분배 이력 초기화 완료');
+      alert('전체 배정이 회수되었습니다.');
+
+      loadDistribution('noCheck');
+      loadDistribution('proofError');
+      loadRemaining();
+      loadHistory();
+      loadStats();
+    }
+
+    // 처리 내역·상담 이력: Firebase에서 로드 (CS 계정이 outbound.html에서 저장)
+    async function loadProcessingAndCounselingFromFirebase() {
+      if (!db) return;
+      const procMap = new Map();
+      const counselMap = new Map();
+      try {
+        for (const prefix of PREFIXES) {
+          const procSnap = await get(dbRef(db, prefix + '/processing_history'));
+          if (procSnap.exists()) {
+            procSnap.forEach((dateSnap) => {
+              const dateKey = dateSnap.key;
+              if (!/^\d{8}$/.test(dateKey)) return;
+              dateSnap.forEach((idSnap) => {
+                const id = idSnap.key;
+                const arr = [];
+                idSnap.forEach((child) => arr.push(child.val()));
+                if (arr.length) procMap.set(`${prefix}_${dateKey}_${id}`, arr.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+              });
+            });
+          }
+          const metaSnap = await get(dbRef(db, prefix + '/submissions_meta'));
+          if (metaSnap.exists()) {
+            metaSnap.forEach((dateSnap) => {
+              const dateKey = dateSnap.key;
+              if (!/^\d{8}$/.test(dateKey)) return;
+              dateSnap.forEach((inner) => {
+                const data = inner.val();
+                const hist = data && data.counselingHistory;
+                if (Array.isArray(hist) && hist.length) {
+                  counselMap.set(`${prefix}_${dateKey}_${inner.key}`, hist.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+                }
+              });
+            });
+          }
+        }
+        processingHistoryMap = procMap;
+        counselingHistoryMap = counselMap;
+      } catch (err) {
+        console.error('Firebase 처리/상담이력 로드 오류:', err);
+      }
     }
 
     let distributionHistoryMap = loadDistributionHistoryFromStorage();
-    let processingHistoryMap = loadProcessingHistoryFromStorage();
-    let counselingHistoryMap = loadCounselingHistoryFromStorage();
+    let processingHistoryMap = new Map();
+    let counselingHistoryMap = new Map();
     let allSubmissions = [];
     let isSigningOut = false; // 무한 루프 방지 플래그
     let lastCheckedEmail = ''; // 마지막으로 확인한 이메일 (중복 체크 방지)
@@ -626,95 +769,71 @@
         const startTime = new Date(startDate + 'T00:00:00').getTime();
         const endTime = new Date(endDate + 'T23:59:59').getTime();
 
-        // localStorage에서 최신 데이터 로드
         distributionHistoryMap = loadDistributionHistoryFromStorage();
-        processingHistoryMap = loadProcessingHistoryFromStorage();
-        counselingHistoryMap = loadCounselingHistoryFromStorage();
+        await loadProcessingAndCounselingFromFirebase();
 
-        // localStorage에서 최신 데이터 로드
-        distributionHistoryMap = loadDistributionHistoryFromStorage();
-        processingHistoryMap = loadProcessingHistoryFromStorage();
-        counselingHistoryMap = loadCounselingHistoryFromStorage();
-
-        // 상담사별 통계 수집 (목업: localStorage에서)
+        // 상담사별 통계: 총/미특정/증빙오류 각각 분배건·처리건
         const accountStats = {};
         CS_ACCOUNTS.forEach(email => {
           accountStats[email] = {
             account: email,
-            distributed: 0, // 분배건수
-            callComplete: 0, // 유선안내완료건수
-            counselingHistory: 0 // 상담이력 작성 건수
+            totalDist: 0, totalComplete: 0,
+            noCheckDist: 0, noCheckComplete: 0,
+            proofErrorDist: 0, proofErrorComplete: 0
           };
         });
 
-        // 분배 이력에서 분배건수 계산 (기간 내 접수일 기준, 최신 분배만 카운트)
-        const latestDistributionMap = new Map(); // key -> { account, timestamp }
+        const latestDistributionMap = new Map();
         distributionHistoryMap.forEach((history, key) => {
           if (Array.isArray(history) && history.length > 0) {
             const latest = history[history.length - 1];
+            const category = latest.category === 'proofError' ? 'proofError' : 'noCheck';
             const parts = key.split('_');
             const dateKey = parts[1];
             if (dateKey && /^\d{8}$/.test(dateKey)) {
-              const year = dateKey.substring(0, 4);
-              const month = dateKey.substring(4, 6);
-              const day = dateKey.substring(6, 8);
-              const dateStr = year + '-' + month + '-' + day;
-              const itemDate = new Date(dateStr + 'T00:00:00').getTime();
+              const y = dateKey.substring(0, 4), m = dateKey.substring(4, 6), d = dateKey.substring(6, 8);
+              const itemDate = new Date(y + '-' + m + '-' + d + 'T00:00:00').getTime();
               if (itemDate >= startTime && itemDate <= endTime) {
-                latestDistributionMap.set(key, latest);
+                latestDistributionMap.set(key, { ...latest, _category: category });
               }
             }
           }
         });
 
-        latestDistributionMap.forEach((latest, key) => {
-          if (accountStats[latest.account]) {
-            accountStats[latest.account].distributed++;
-          }
-        });
+        latestDistributionMap.forEach((entry, key) => {
+          const acc = accountStats[entry.account];
+          if (!acc) return;
+          acc.totalDist++;
+          if (entry._category === 'noCheck') acc.noCheckDist++;
+          else acc.proofErrorDist++;
 
-        // 유선안내완료 건수: 분배된 각 접수건(key)별로 "현재" 유선안내완료 상태인지 판정 (중복 카운트 방지)
-        latestDistributionMap.forEach((latest, key) => {
-          if (!accountStats[latest.account]) return;
           const processingHistory = processingHistoryMap.get(key) || [];
           if (isCallCompleteForKey(processingHistory)) {
-            accountStats[latest.account].callComplete++;
+            acc.totalComplete++;
+            if (entry._category === 'noCheck') acc.noCheckComplete++;
+            else acc.proofErrorComplete++;
           }
         });
 
-        // 상담이력 작성 건수: 분배된 각 접수건별로 1회만 카운트 (중복 방지)
-        latestDistributionMap.forEach((latest, key) => {
-          if (!accountStats[latest.account]) return;
-          const counselingHistory = counselingHistoryMap.get(key) || [];
-          if (Array.isArray(counselingHistory) && counselingHistory.length > 0) {
-            accountStats[latest.account].counselingHistory++;
-          }
-        });
-
-        // 통계 테이블 생성
         let html = '<table class="stats-table">';
         html += '<thead><tr>';
         html += '<th>상담사</th>';
-        html += '<th>분배건수</th>';
-        html += '<th>유선안내<br>완료건수</th>';
-        html += '<th>상담이력<br>작성 건수</th>';
-        html += '<th>처리율</th>';
+        html += '<th>총 분배</th><th>총 처리건</th>';
+        html += '<th>미특정 분배건</th><th>미특정 처리건</th>';
+        html += '<th>증빙오류 접수건</th><th>증빙오류 처리건</th>';
         html += '</tr></thead><tbody>';
 
         Object.values(accountStats).forEach(stat => {
-          const distributed = stat.distributed || 0;
-          const completed = stat.callComplete || 0;
-          const rate = distributed > 0 ? ((completed / distributed) * 100).toFixed(1) : '0.0';
-          
           html += '<tr>';
           html += '<td class="text-left">' + escapeHtml(stat.account) + '</td>';
-          html += '<td class="number">' + distributed + '</td>';
-          html += '<td class="number">' + completed + '</td>';
-          html += '<td class="number">' + stat.counselingHistory + '</td>';
-          html += '<td class="number">' + rate + '%</td>';
+          html += '<td class="number">' + stat.totalDist + '</td>';
+          html += '<td class="number">' + stat.totalComplete + '</td>';
+          html += '<td class="number">' + stat.noCheckDist + '</td>';
+          html += '<td class="number">' + stat.noCheckComplete + '</td>';
+          html += '<td class="number">' + stat.proofErrorDist + '</td>';
+          html += '<td class="number">' + stat.proofErrorComplete + '</td>';
           html += '</tr>';
         });
-
         html += '</tbody></table>';
         statsResult.innerHTML = html;
         downloadStatsBtn.style.display = 'inline-block';
@@ -725,17 +844,18 @@
       }
     }
 
-    // 전체 접수건 조회 (현재 기준)
-    async function loadDistribution() {
+    // 전체 접수건 조회 (유형별)
+    async function loadDistribution(filterType) {
       if (!db) {
-        distributionResult.innerHTML = '<div class="msg error">Firebase가 초기화되지 않았습니다.</div>';
+        const target = document.querySelector('.dist-result[data-type="' + filterType + '"]');
+        if (target) target.innerHTML = '<div class="msg error">Firebase가 초기화되지 않았습니다.</div>';
         return;
       }
 
-      const filterType = distributionFilterSelect.value; // 'noCheck' or 'proofError'
-
-      distributionLoading.style.display = 'block';
-      distributionResult.innerHTML = '';
+      const targetResult = document.querySelector('.dist-result[data-type="' + filterType + '"]');
+      const targetLoading = document.querySelector('.dist-loading[data-type="' + filterType + '"]');
+      if (targetLoading) targetLoading.style.display = 'block';
+      if (targetResult) targetResult.innerHTML = '';
 
       try {
         // 전체 접수건 조회 (날짜 제한 없음)
@@ -761,15 +881,14 @@
 
         // 분배 상태 확인 (localStorage에서 최신 로드)
         distributionHistoryMap = loadDistributionHistoryFromStorage();
-        processingHistoryMap = loadProcessingHistoryFromStorage();
-        counselingHistoryMap = loadCounselingHistoryFromStorage();
+        await loadProcessingAndCounselingFromFirebase();
         
         const distributionMap = new Map();
         allSubmissions.forEach(item => {
           const key = `${item._prefix}_${item._dateKey}_${item.id}`;
           const history = distributionHistoryMap.get(key) || [];
           const latest = Array.isArray(history) && history.length > 0 ? history[history.length - 1] : null;
-          if (latest) {
+          if (latest && latest.category === filterType) {
             if (!distributionMap.has(latest.account)) {
               distributionMap.set(latest.account, []);
             }
@@ -809,6 +928,7 @@
           html += '<th>처리완료</th>';
           html += '<th>미처리</th>';
           html += '<th>재분배</th>';
+          html += '<th>회수</th>';
           html += '</tr></thead><tbody>';
           
           distributionMap.forEach((items, account) => {
@@ -830,6 +950,9 @@
             } else {
               html += '-';
             }
+            html += '</td>';
+            html += '<td>';
+            html += '<button type="button" class="btn-recall-account" data-account="' + escapeHtml(account) + '" data-count="' + items.length + '" style="padding: 4px 12px; font-size: 12px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer;">회수</button>';
             html += '</td>';
             html += '</tr>';
           });
@@ -858,10 +981,10 @@
           html += '</div></div>';
         }
 
-        distributionResult.innerHTML = html;
+        if (targetResult) targetResult.innerHTML = html;
 
         // 분배 버튼 이벤트
-        distributionResult.querySelectorAll('.btn-assign, .btn-reassign').forEach(btn => {
+        if (targetResult) targetResult.querySelectorAll('.btn-assign, .btn-reassign').forEach(btn => {
           btn.addEventListener('click', (e) => {
             const key = btn.getAttribute('data-key');
             const category = btn.getAttribute('data-category') || '';
@@ -872,8 +995,16 @@
           });
         });
 
+        // 계정별 회수 버튼 이벤트
+        if (targetResult) targetResult.querySelectorAll('.btn-recall-account').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const account = btn.getAttribute('data-account');
+            if (account) recallDistributionByAccount(account);
+          });
+        });
+
         // 대량 재분배 버튼 이벤트
-        distributionResult.querySelectorAll('.btn-reassign-bulk').forEach(btn => {
+        if (targetResult) targetResult.querySelectorAll('.btn-reassign-bulk').forEach(btn => {
           btn.addEventListener('click', (e) => {
             const fromAccount = btn.getAttribute('data-account');
             
@@ -890,27 +1021,24 @@
               return;
             }
             
-            openBulkReassignModal(fromAccount, uncompletedItems);
+            openBulkReassignModal(fromAccount, uncompletedItems, filterType);
           });
         });
       } catch (err) {
-        distributionResult.innerHTML = '<div class="msg error">접수건 조회 실패: ' + escapeHtml(err.message || err) + '</div>';
+        if (targetResult) targetResult.innerHTML = '<div class="msg error">접수건 조회 실패: ' + escapeHtml(err.message || err) + '</div>';
       } finally {
-        distributionLoading.style.display = 'none';
+        if (targetLoading) targetLoading.style.display = 'none';
       }
     }
 
     // 자동 균등 분배
-    async function autoDistribute() {
+    async function autoDistribute(filterType) {
       if (allSubmissions.length === 0) {
-        alert('먼저 접수건을 조회해주세요.');
+        alert('먼저 해당 유형의 접수건을 조회해주세요.');
         return;
       }
 
-      // 분배 상태 확인 (localStorage에서 최신 로드)
       distributionHistoryMap = loadDistributionHistoryFromStorage();
-
-      const filterType = distributionFilterSelect.value;
 
       // 드롭다운 필터에 따라 미분배 접수건 필터링
       const unassigned = allSubmissions.filter(item => {
@@ -935,20 +1063,19 @@
         return;
       }
 
-      const filterLabel = filterType === 'noCheck' ? '환불/교환 미체크' : '증빙오류(반려)';
-      const msg = filterLabel + ' 미분배 접수건 ' + unassigned.length + '건을 상담사들에게 균등 분배하시겠습니까?';
-      
-      if (!confirm(msg)) {
+      const accounts = Array.from(document.querySelectorAll('.dist-account-cb'))
+        .filter((cb) => cb.checked)
+        .map((cb) => cb.value);
+
+      if (accounts.length === 0) {
+        alert('분배할 상담사를 1명 이상 선택해주세요. (위 계정 체크박스에서 선택)');
         return;
       }
 
-      const accounts = CS_ACCOUNTS.filter(email => {
-        // 실제로는 활성 상담사만 필터링할 수 있음
-        return true;
-      });
-
-      if (accounts.length === 0) {
-        alert('분배할 상담사가 없습니다.');
+      const filterLabel = filterType === 'noCheck' ? '환불/교환 미체크' : '증빙오류(반려)';
+      const msg = filterLabel + ' 미분배 접수건 ' + unassigned.length + '건을 선택한 상담사 ' + accounts.length + '명에게 균등 분배하시겠습니까?';
+      
+      if (!confirm(msg)) {
         return;
       }
 
@@ -983,7 +1110,7 @@
 
       saveDistributionHistoryToStorage(distributionHistoryMap);
       alert('균등 분배가 완료되었습니다.');
-      loadDistribution();
+      loadDistribution(filterType);
     }
 
     // 분배 모달 열기
@@ -1034,7 +1161,8 @@
 
       saveDistributionHistoryToStorage(distributionHistoryMap);
       closeAssignModal();
-      loadDistribution();
+      const cat = assignModal.getAttribute('data-category') || 'noCheck';
+      loadDistribution(cat);
     });
 
     assignModalClose.addEventListener('click', closeAssignModal);
@@ -1044,23 +1172,22 @@
     });
 
 
-    // 선택 분배 (현재 분배 현황 표시 및 재분배)
-    async function selectiveDistribute() {
+    // 선택 분배 (해당 유형의 분배 현황 모달)
+    async function selectiveDistribute(filterType) {
       if (allSubmissions.length === 0) {
-        alert('먼저 접수건을 조회해주세요.');
+        alert('먼저 해당 유형의 접수건을 조회해주세요.');
         return;
       }
 
-      // 분배 현황을 모달로 표시
       distributionHistoryMap = loadDistributionHistoryFromStorage();
-      processingHistoryMap = loadProcessingHistoryFromStorage();
+      await loadProcessingAndCounselingFromFirebase();
       
       const distributionMap = new Map();
       allSubmissions.forEach(item => {
         const key = `${item._prefix}_${item._dateKey}_${item.id}`;
         const history = distributionHistoryMap.get(key) || [];
         const latest = Array.isArray(history) && history.length > 0 ? history[history.length - 1] : null;
-        if (latest) {
+        if (latest && latest.category === filterType) {
           if (!distributionMap.has(latest.account)) {
             distributionMap.set(latest.account, []);
           }
@@ -1069,20 +1196,23 @@
       });
 
       if (distributionMap.size === 0) {
-        alert('현재 분배된 접수건이 없습니다.');
+        const label = filterType === 'noCheck' ? '환불/교환 미체크' : '증빙오류(반려)';
+        alert(label + ' 유형으로 분배된 접수건이 없습니다.');
         return;
       }
 
+      const filterLabel = filterType === 'noCheck' ? '환불/교환 미체크' : '증빙오류(반려)';
       // 분배 현황 모달 표시
       let modalHtml = '<div style="max-height: 60vh; overflow-y: auto;">';
       modalHtml += '<table class="stats-table" style="width: 100%;">';
       modalHtml += '<thead><tr>';
-      modalHtml += '<th>상담사</th>';
-      modalHtml += '<th>분배 건수</th>';
-      modalHtml += '<th>처리완료</th>';
-      modalHtml += '<th>미처리</th>';
-      modalHtml += '<th>재분배</th>';
-      modalHtml += '</tr></thead><tbody>';
+        modalHtml += '<th>상담사</th>';
+        modalHtml += '<th>분배 건수</th>';
+        modalHtml += '<th>처리완료</th>';
+        modalHtml += '<th>미처리</th>';
+        modalHtml += '<th>재분배</th>';
+        modalHtml += '<th>회수</th>';
+        modalHtml += '</tr></thead><tbody>';
 
       distributionMap.forEach((items, account) => {
         const completedCount = items.filter(item => {
@@ -1104,6 +1234,9 @@
           modalHtml += '-';
         }
         modalHtml += '</td>';
+        modalHtml += '<td>';
+        modalHtml += '<button type="button" class="btn-recall-modal" data-account="' + escapeHtml(account) + '" style="padding: 4px 12px; font-size: 12px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer;">회수</button>';
+        modalHtml += '</td>';
         modalHtml += '</tr>';
       });
 
@@ -1113,10 +1246,11 @@
       // 모달 표시
       const modal = document.createElement('div');
       modal.className = 'modal-overlay show';
+      modal.setAttribute('data-filter-type', filterType);
       modal.innerHTML = `
         <div class="modal-box">
           <div class="modal-header">
-            <h3>현재 분배 현황</h3>
+            <h3>${filterLabel} — 현재 분배 현황</h3>
             <button type="button" class="modal-close" id="selectiveModalClose">닫기</button>
           </div>
           <div class="modal-body">
@@ -1147,13 +1281,22 @@
             return !isCallCompleteForKey(processingHistory);
           });
           closeModal();
-          openBulkReassignModal(fromAccount, uncompletedItems);
+          openBulkReassignModal(fromAccount, uncompletedItems, filterType);
+        });
+      });
+
+      // 회수 버튼 이벤트 (해당 유형만 회수하려면 별도 로직 필요 - 현재는 전체 회수)
+      modal.querySelectorAll('.btn-recall-modal').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const account = btn.getAttribute('data-account');
+          closeModal();
+          if (account) recallDistributionByAccount(account);
         });
       });
     }
 
-    // 대량 재분배 모달
-    function openBulkReassignModal(fromAccount, items) {
+    // 대량 재분배 모달 (filterType: 'noCheck' | 'proofError' — 완료 후 해당 유형만 재조회)
+    function openBulkReassignModal(fromAccount, items, filterType) {
       const count = prompt(fromAccount + '의 미처리 건 ' + items.length + '건 중 몇 건을 재분배하시겠습니까?');
       const transferCount = parseInt(count) || 0;
       
@@ -1196,7 +1339,12 @@
 
       saveDistributionHistoryToStorage(distributionHistoryMap);
       alert('재분배가 완료되었습니다.');
-      loadDistribution();
+      if (filterType) {
+        loadDistribution(filterType);
+      } else {
+        loadDistribution('noCheck');
+        loadDistribution('proofError');
+      }
     }
 
     // 상담사별 잔여건 조회 및 이관
@@ -1211,7 +1359,7 @@
 
       try {
         distributionHistoryMap = loadDistributionHistoryFromStorage();
-        processingHistoryMap = loadProcessingHistoryFromStorage();
+        await loadProcessingAndCounselingFromFirebase();
 
         // 모든 접수 데이터 로드 (최근 30일)
         const allItems = [];
@@ -1238,13 +1386,14 @@
           }
         }
 
-        // 상담사별 잔여건 계산
+        // 상담사별 잔여건 계산 (통계와 동일한 컬럼: 총/미특정/증빙오류)
         const accountRemaining = {};
         CS_ACCOUNTS.forEach(email => {
           accountRemaining[email] = {
             account: email,
-            total: 0,
-            completed: 0,
+            totalDist: 0, totalComplete: 0,
+            noCheckDist: 0, noCheckComplete: 0,
+            proofErrorDist: 0, proofErrorComplete: 0,
             remaining: 0,
             items: []
           };
@@ -1255,46 +1404,59 @@
           const history = distributionHistoryMap.get(key) || [];
           if (Array.isArray(history) && history.length > 0) {
             const latest = history[history.length - 1];
+            const category = latest.category === 'proofError' ? 'proofError' : 'noCheck';
             const account = latest.account;
             if (accountRemaining[account]) {
-              accountRemaining[account].total++;
-              accountRemaining[account].items.push(item);
-              
-              // 처리완료 여부 확인
+              const acc = accountRemaining[account];
+              acc.totalDist++;
+              if (category === 'noCheck') acc.noCheckDist++; else acc.proofErrorDist++;
+              acc.items.push({ ...item, _category: category });
+
               const processingHistory = processingHistoryMap.get(key) || [];
               const isCompleted = isCallCompleteForKey(processingHistory);
-              
               if (isCompleted) {
-                accountRemaining[account].completed++;
+                acc.totalComplete++;
+                if (category === 'noCheck') acc.noCheckComplete++; else acc.proofErrorComplete++;
               } else {
-                accountRemaining[account].remaining++;
+                acc.remaining++;
               }
             }
           }
         });
 
-        // 잔여건 표시
+        // 잔여건 표시 (통계와 동일한 컬럼)
         let html = '<table class="stats-table">';
         html += '<thead><tr>';
         html += '<th>상담사</th>';
-        html += '<th>총 분배</th>';
-        html += '<th>처리완료</th>';
-        html += '<th>잔여건</th>';
-        html += '<th>처리율</th>';
-        html += '<th>이관</th>';
+        html += '<th>총 분배</th><th>총 처리건</th>';
+        html += '<th>미특정 분배건</th><th>미특정 처리건</th>';
+        html += '<th>증빙오류 접수건</th><th>증빙오류 처리건</th>';
+        html += '<th>잔여건</th><th>처리율</th>';
+        html += '<th>이관</th><th>회수</th>';
         html += '</tr></thead><tbody>';
 
         Object.values(accountRemaining).forEach(stat => {
-          const rate = stat.total > 0 ? ((stat.completed / stat.total) * 100).toFixed(1) : '0.0';
+          const rate = stat.totalDist > 0 ? ((stat.totalComplete / stat.totalDist) * 100).toFixed(1) : '0.0';
           html += '<tr>';
           html += '<td class="text-left">' + escapeHtml(stat.account) + '</td>';
-          html += '<td class="number">' + stat.total + '</td>';
-          html += '<td class="number">' + stat.completed + '</td>';
+          html += '<td class="number">' + stat.totalDist + '</td>';
+          html += '<td class="number">' + stat.totalComplete + '</td>';
+          html += '<td class="number">' + stat.noCheckDist + '</td>';
+          html += '<td class="number">' + stat.noCheckComplete + '</td>';
+          html += '<td class="number">' + stat.proofErrorDist + '</td>';
+          html += '<td class="number">' + stat.proofErrorComplete + '</td>';
           html += '<td class="number">' + stat.remaining + '</td>';
           html += '<td class="number">' + rate + '%</td>';
           html += '<td>';
           if (stat.remaining > 0) {
-            html += '<button type="button" class="btn-reassign" data-account="' + escapeHtml(stat.account) + '" data-count="' + stat.remaining + '">이관</button>';
+            html += '<button type="button" class="btn-transfer-remaining" data-account="' + escapeHtml(stat.account) + '">이관</button>';
+          } else {
+            html += '-';
+          }
+          html += '</td>';
+          html += '<td>';
+          if (stat.totalDist > 0) {
+            html += '<button type="button" class="btn-recall-remaining" data-account="' + escapeHtml(stat.account) + '" style="padding: 4px 12px; font-size: 12px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer;">회수</button>';
           } else {
             html += '-';
           }
@@ -1305,11 +1467,16 @@
         html += '</tbody></table>';
         remainingResult.innerHTML = html;
 
-        // 이관 버튼 이벤트
-        remainingResult.querySelectorAll('.btn-reassign').forEach(btn => {
+        // 회수·이관 버튼 이벤트
+        remainingResult.querySelectorAll('.btn-recall-remaining').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const account = btn.getAttribute('data-account');
+            if (account) recallDistributionByAccount(account);
+          });
+        });
+        remainingResult.querySelectorAll('.btn-transfer-remaining').forEach(btn => {
           btn.addEventListener('click', () => {
             const fromAccount = btn.getAttribute('data-account');
-            const count = parseInt(btn.getAttribute('data-count'));
             const remainingItems = accountRemaining[fromAccount].items.filter(item => {
               const key = `${item._prefix}_${item._dateKey}_${item.id}`;
               const processingHistory = processingHistoryMap.get(key) || [];
@@ -1325,123 +1492,131 @@
       }
     }
 
-    // 분배 이력 조회
+    // 분배 이력 조회 (날짜별 상세)
     async function loadHistory() {
       if (!db) {
-        historyResult.innerHTML = '<div class="msg error">Firebase가 초기화되지 않았습니다.</div>';
+        statsResult.innerHTML = '<div class="msg error">Firebase가 초기화되지 않았습니다.</div>';
         return;
       }
 
-      const startDate = historyStartDate.value;
-      const endDate = historyEndDate.value;
-      const selectedAccount = historyAccountSelect.value;
+      const startDate = statsStartDate.value;
+      const endDate = statsEndDate.value;
+      const selectedAccount = historyAccountSelect ? historyAccountSelect.value : '';
 
       if (!startDate || !endDate) {
-        historyResult.innerHTML = '<div class="msg error">기간을 선택해주세요.</div>';
+        statsResult.innerHTML = '<div class="msg error">기간을 선택해주세요.</div>';
         return;
       }
 
-      historyLoading.style.display = 'block';
-      historyResult.innerHTML = '';
+      statsLoading.style.display = 'block';
+      statsResult.innerHTML = '';
+      if (downloadStatsBtn) downloadStatsBtn.style.display = 'none';
 
       try {
         const startTime = new Date(startDate + 'T00:00:00').getTime();
         const endTime = new Date(endDate + 'T23:59:59').getTime();
 
         distributionHistoryMap = loadDistributionHistoryFromStorage();
-        processingHistoryMap = loadProcessingHistoryFromStorage();
+        await loadProcessingAndCounselingFromFirebase();
 
-        // 날짜별, 상담사별 분배 이력 수집
-        const historyByDate = {}; // dateKey -> { account -> { distributed, completed } }
+        // 날짜별·상담사별: 총/미특정/증빙오류 각각 분배건·처리건
+        const historyByDate = {}; // dateKey -> account -> { totalDist, totalComplete, noCheckDist, noCheckComplete, proofErrorDist, proofErrorComplete }
 
         distributionHistoryMap.forEach((history, key) => {
           if (Array.isArray(history) && history.length > 0) {
+            const latest = history[history.length - 1];
+            const category = latest.category === 'proofError' ? 'proofError' : 'noCheck';
             const parts = key.split('_');
             const dateKey = parts[1];
             if (dateKey && /^\d{8}$/.test(dateKey)) {
-              const year = dateKey.substring(0, 4);
-              const month = dateKey.substring(4, 6);
-              const day = dateKey.substring(6, 8);
-              const dateStr = year + '-' + month + '-' + day;
-              const itemDate = new Date(dateStr + 'T00:00:00').getTime();
-              
+              const y = dateKey.substring(0, 4), m = dateKey.substring(4, 6), d = dateKey.substring(6, 8);
+              const itemDate = new Date(y + '-' + m + '-' + d + 'T00:00:00').getTime();
               if (itemDate >= startTime && itemDate <= endTime) {
-                const latest = history[history.length - 1];
                 const account = latest.account;
-                
-                // 선택된 상담사 필터링
-                if (selectedAccount && account !== selectedAccount) {
-                  return;
-                }
+                if (selectedAccount && account !== selectedAccount) return;
 
-                if (!historyByDate[dateKey]) {
-                  historyByDate[dateKey] = {};
-                }
-                if (!historyByDate[dateKey][account]) {
-                  historyByDate[dateKey][account] = { distributed: 0, completed: 0 };
-                }
-                historyByDate[dateKey][account].distributed++;
+                if (!historyByDate[dateKey]) historyByDate[dateKey] = {};
+                const acc = historyByDate[dateKey][account];
+                const def = { totalDist: 0, totalComplete: 0, noCheckDist: 0, noCheckComplete: 0, proofErrorDist: 0, proofErrorComplete: 0 };
+                const s = acc ? { ...acc } : { ...def };
+                s.totalDist++;
+                if (category === 'noCheck') s.noCheckDist++; else s.proofErrorDist++;
 
-                // 처리완료 여부 확인
                 const processingHistory = processingHistoryMap.get(key) || [];
-                const isCompleted = isCallCompleteForKey(processingHistory);
-                if (isCompleted) {
-                  historyByDate[dateKey][account].completed++;
+                if (isCallCompleteForKey(processingHistory)) {
+                  s.totalComplete++;
+                  if (category === 'noCheck') s.noCheckComplete++; else s.proofErrorComplete++;
                 }
+                historyByDate[dateKey][account] = s;
               }
             }
           }
         });
 
-        // 결과 테이블 생성
-        let html = '<table class="stats-table">';
+        let html = '<table class="stats-table stats-history">';
         html += '<thead><tr>';
-        html += '<th>날짜</th>';
-        html += '<th>상담사</th>';
-        html += '<th>분배 건수</th>';
-        html += '<th>처리완료 건수</th>';
-        html += '<th>처리율</th>';
+        html += '<th>날짜</th><th>상담사</th>';
+        html += '<th>총 분배</th><th>총 처리건</th>';
+        html += '<th>미특정 분배건</th><th>미특정 처리건</th>';
+        html += '<th>증빙오류 접수건</th><th>증빙오류 처리건</th>';
         html += '</tr></thead><tbody>';
 
         const sortedDates = Object.keys(historyByDate).sort().reverse();
         sortedDates.forEach(dateKey => {
-          const year = dateKey.substring(0, 4);
-          const month = dateKey.substring(4, 6);
-          const day = dateKey.substring(6, 8);
-          const dateStr = year + '-' + month + '-' + day;
-          
-          const accounts = Object.keys(historyByDate[dateKey]).sort();
-          accounts.forEach(account => {
-            const stat = historyByDate[dateKey][account];
-            const rate = stat.distributed > 0 ? ((stat.completed / stat.distributed) * 100).toFixed(1) : '0.0';
-            
+          const y = dateKey.substring(0, 4), m = dateKey.substring(4, 6), d = dateKey.substring(6, 8);
+          const dateStr = y + '-' + m + '-' + d;
+          Object.keys(historyByDate[dateKey]).sort().forEach(account => {
+            const s = historyByDate[dateKey][account];
             html += '<tr>';
             html += '<td>' + dateStr + '</td>';
             html += '<td class="text-left">' + escapeHtml(account) + '</td>';
-            html += '<td class="number">' + stat.distributed + '</td>';
-            html += '<td class="number">' + stat.completed + '</td>';
-            html += '<td class="number">' + rate + '%</td>';
+            html += '<td class="number">' + s.totalDist + '</td>';
+            html += '<td class="number">' + s.totalComplete + '</td>';
+            html += '<td class="number">' + s.noCheckDist + '</td>';
+            html += '<td class="number">' + s.noCheckComplete + '</td>';
+            html += '<td class="number">' + s.proofErrorDist + '</td>';
+            html += '<td class="number">' + s.proofErrorComplete + '</td>';
             html += '</tr>';
           });
         });
-
         html += '</tbody></table>';
 
         if (sortedDates.length === 0) {
           html = '<div class="msg info">조회된 분배 이력이 없습니다.</div>';
         }
 
-        historyResult.innerHTML = html;
+        statsResult.innerHTML = html;
+        if (downloadStatsBtn && sortedDates.length > 0) downloadStatsBtn.style.display = 'inline-block';
       } catch (err) {
-        historyResult.innerHTML = '<div class="msg error">이력 조회 실패: ' + escapeHtml(err.message || err) + '</div>';
+        statsResult.innerHTML = '<div class="msg error">이력 조회 실패: ' + escapeHtml(err.message || err) + '</div>';
       } finally {
-        historyLoading.style.display = 'none';
+        statsLoading.style.display = 'none';
       }
     }
 
-    // 이관 모달 열기
+    // 이관 모달: 유형별 건수 표시 후 확인
     function openTransferModal(fromAccount, items) {
-      const account = prompt('잔여건 ' + items.length + '건을 이관할 상담사를 선택하세요:\n\n' +
+      if (!items || items.length === 0) {
+        alert('이관할 잔여건이 없습니다.');
+        return;
+      }
+
+      const noCheckCount = items.filter(i => i._category === 'noCheck').length;
+      const proofErrorCount = items.filter(i => i._category === 'proofError').length;
+      let breakdownMsg = '';
+      if (noCheckCount > 0 && proofErrorCount > 0) {
+        breakdownMsg = '미특정 ' + noCheckCount + '건, 증빙오류(반려) ' + proofErrorCount + '건';
+      } else if (noCheckCount > 0) {
+        breakdownMsg = '미특정 ' + noCheckCount + '건';
+      } else {
+        breakdownMsg = '증빙오류(반려) ' + proofErrorCount + '건';
+      }
+
+      if (!confirm(fromAccount + '의 잔여건 이관\n\n' + breakdownMsg + ' (총 ' + items.length + '건)\n\n이관하시겠습니까?')) {
+        return;
+      }
+
+      const account = prompt('이관할 상담사를 선택하세요:\n\n' +
         CS_ACCOUNTS.filter(e => e !== fromAccount).map((e, i) => (i + 1) + '. ' + e).join('\n') + '\n\n상담사 이메일을 입력하세요:');
       
       if (!account || !CS_ACCOUNTS.includes(account.trim()) || account.trim() === fromAccount) {
@@ -1450,49 +1625,67 @@
       }
 
       const toAccount = account.trim();
-      const count = prompt('몇 건을 이관하시겠습니까? (최대 ' + items.length + '건):');
-      const transferCount = parseInt(count) || 0;
-      
-      if (transferCount <= 0 || transferCount > items.length) {
-        alert('올바른 건수를 입력해주세요.');
+      if (!confirm(breakdownMsg + ' 총 ' + items.length + '건을 ' + toAccount + '에게 이관하시겠습니까?')) {
         return;
       }
 
-      if (!confirm(fromAccount + '의 잔여건 ' + transferCount + '건을 ' + toAccount + '에게 이관하시겠습니까?')) {
-        return;
-      }
-
-      // 이관 처리
       distributionHistoryMap = loadDistributionHistoryFromStorage();
-      const itemsToTransfer = items.slice(0, transferCount);
-      
-      itemsToTransfer.forEach(item => {
+      items.forEach(item => {
         const key = `${item._prefix}_${item._dateKey}_${item.id}`;
-        if (!distributionHistoryMap.has(key)) {
-          distributionHistoryMap.set(key, []);
-        }
-        
+        if (!distributionHistoryMap.has(key)) distributionHistoryMap.set(key, []);
+        const category = item._category || (item.proofError ? 'proofError' : 'noCheck');
         distributionHistoryMap.get(key).push({
           account: toAccount,
           timestamp: Date.now(),
           type: 'reassign',
-          fromAccount: fromAccount
+          fromAccount: fromAccount,
+          category: category
         });
       });
 
       saveDistributionHistoryToStorage(distributionHistoryMap);
       alert('이관이 완료되었습니다.');
       loadRemaining();
+      loadDistribution('noCheck');
+      loadDistribution('proofError');
     }
 
 
     // 이벤트 리스너
-    if (loadStatsBtn) loadStatsBtn.addEventListener('click', loadStats);
-    if (loadDistributionBtn) loadDistributionBtn.addEventListener('click', loadDistribution);
-    if (autoDistributeBtn) autoDistributeBtn.addEventListener('click', autoDistribute);
-    if (selectiveDistributeBtn) selectiveDistributeBtn.addEventListener('click', selectiveDistribute);
+    // 탭 전환
+    document.querySelectorAll('.dashboard-tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const targetId = 'tab-' + tab.getAttribute('data-tab');
+        document.querySelectorAll('.dashboard-tab').forEach((t) => t.classList.remove('active'));
+        document.querySelectorAll('.dashboard-tab-content').forEach((c) => c.classList.remove('active'));
+        tab.classList.add('active');
+        const target = document.getElementById(targetId);
+        if (target) target.classList.add('active');
+      });
+    });
+
+    // 통계 탭: 보기 모드에 따라 loadStats 또는 loadHistory 호출
+    if (loadStatsBtn) {
+      loadStatsBtn.addEventListener('click', () => {
+        const mode = statsViewMode ? statsViewMode.value : 'byAccount';
+        if (mode === 'byDate') {
+          loadHistory();
+        } else {
+          loadStats();
+        }
+      });
+    }
+    // 유형별 분배 버튼 이벤트 (data-type으로 noCheck / proofError 구분)
+    document.addEventListener('click', (e) => {
+      const type = e.target.closest('.load-dist-btn')?.getAttribute('data-type');
+      if (type) { loadDistribution(type); return; }
+      const autoType = e.target.closest('.auto-dist-btn')?.getAttribute('data-type');
+      if (autoType) { autoDistribute(autoType); return; }
+      const selType = e.target.closest('.select-dist-btn')?.getAttribute('data-type');
+      if (selType) { selectiveDistribute(selType); return; }
+    });
+    if (resetDistributionBtn) resetDistributionBtn.addEventListener('click', resetDistribution);
     if (loadRemainingBtn) loadRemainingBtn.addEventListener('click', loadRemaining);
-    if (loadHistoryBtn) loadHistoryBtn.addEventListener('click', loadHistory);
 
     // CSV 다운로드
     if (downloadStatsBtn) {
@@ -1503,28 +1696,18 @@
           return;
         }
 
-        // CSV 데이터 생성
-        let csv = '상담사,분배건수,유선안내완료건수,상담이력작성건수,처리율\n';
-        
-        const rows = table.querySelectorAll('tbody tr');
-        rows.forEach(row => {
-          const cells = row.querySelectorAll('td');
-          if (cells.length >= 5) {
-            const account = cells[0].textContent.trim();
-            const distributed = cells[1].textContent.trim();
-            const completed = cells[2].textContent.trim();
-            const counseling = cells[3].textContent.trim();
-            const rate = cells[4].textContent.trim();
-            csv += `"${account}",${distributed},${completed},${counseling},${rate}\n`;
-          }
+        const headers = Array.from(table.querySelectorAll('thead th')).map(th => th.textContent.replace(/\s/g, '').trim());
+        let csv = headers.map(h => `"${h}"`).join(',') + '\n';
+
+        table.querySelectorAll('tbody tr').forEach(row => {
+          const cells = Array.from(row.querySelectorAll('td')).map(c => c.textContent.trim());
+          if (cells.length > 0) csv += cells.map(v => `"${v}"`).join(',') + '\n';
         });
 
-        // CSV 파일 다운로드
         const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
-        
         const startDate = statsStartDate.value || '전체';
         const endDate = statsEndDate.value || '전체';
         link.setAttribute('download', `아웃바운드_실적통계_${startDate}_${endDate}.csv`);
