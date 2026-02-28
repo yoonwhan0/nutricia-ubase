@@ -1324,16 +1324,23 @@
       const isLegacy = !!d._isLegacy;
       const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
       const container = document.getElementById('detailModalPhotos');
+      const photoViewUrl = PHOTO_VIEW_URL + '?id=' + encodeURIComponent(id) +
+        (dateKey ? '&dateKey=' + encodeURIComponent(dateKey) : '') +
+        (isLegacy ? '&legacy=1' : '') +
+        '&prefix=' + encodeURIComponent(prefix);
+      const photoViewBtnHtml = '<p style="margin-bottom:12px;">' +
+        '<a href="' + photoViewUrl + '" target="_blank" rel="noopener" class="btn btn-primary" style="display:inline-block;text-decoration:none;padding:8px 16px;">' +
+        '사진 새 창에서 보기 (확대/축소·드래그·키보드 지원)</a></p>';
       get(child(dbRef(db), subPath)).then(snap => {
         if (!snap.exists()) {
-          container.innerHTML = '<p class="no-image">해당 접수 데이터가 없습니다.</p>';
+          container.innerHTML = photoViewBtnHtml + '<p class="no-image">해당 접수 데이터가 없습니다.</p>';
           return;
         }
         const data = snap.val();
         const p1List = getPhotoListFromData(data, 'photo1', 'photo1List');
         const p2List = getPhotoListFromData(data, 'photo2', 'photo2List');
         const p3List = getPhotoListFromData(data, 'photo3', 'photo3List');
-        let html = '<div class="detail-modal-photo-box"><h3>1. 구매 시 영수증</h3><div class="caption">업로드된 사진</div>';
+        let html = photoViewBtnHtml + '<div class="detail-modal-photo-box"><h3>1. 구매 시 영수증</h3><div class="caption">업로드된 사진</div>';
         if (p1List.length) p1List.forEach((url) => { html += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="영수증">'; });
         else html += '<div class="no-image">없음</div>';
         html += '</div><div class="detail-modal-photo-box"><h3>2. 제품 앞면</h3><div class="caption">업로드된 사진</div>';
@@ -1344,7 +1351,7 @@
         else html += '<div class="no-image">없음</div>';
         html += '</div>';
         container.innerHTML = html;
-      }).catch(() => { container.innerHTML = '<p class="no-image">사진을 불러올 수 없습니다.</p>'; });
+      }).catch(() => { container.innerHTML = photoViewBtnHtml + '<p class="no-image">사진을 불러올 수 없습니다.</p>'; });
     }
 
     function attachDetailModalCheckboxListeners() {
