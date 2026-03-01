@@ -130,6 +130,22 @@
       border-radius: 4px;
     }
     .detail-modal-photo-box .no-image { color: #999; font-size: 13px; }
+    .detail-modal-photo-box img { cursor: zoom-in; }
+    /* 포토 줌 오버레이 (photo_view와 동일 기능) */
+    .photo-zoom-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.9); z-index: 10002; display: none; align-items: center; justify-content: center; cursor: default; }
+    .photo-zoom-overlay.show { display: flex; }
+    .photo-zoom-img { max-width: 90vw; max-height: 90vh; object-fit: contain; border-radius: 4px; cursor: zoom-in; transition: transform 0.1s ease-out; transform-origin: center center; }
+    .photo-zoom-img.zoomed { cursor: move; }
+    .photo-zoom-close { position: absolute; top: 20px; right: 20px; color: #fff; font-size: 32px; font-weight: bold; cursor: pointer; background: rgba(0, 0, 0, 0.5); width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; line-height: 1; z-index: 10003; }
+    .photo-zoom-close:hover { background: rgba(0, 0, 0, 0.8); }
+    .photo-zoom-nav { position: absolute; top: 50%; transform: translateY(-50%); color: #fff; font-size: 48px; font-weight: bold; cursor: pointer; background: rgba(0, 0, 0, 0.5); width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; line-height: 1; z-index: 10003; transition: background 0.2s; border: none; }
+    .photo-zoom-nav:hover { background: rgba(0, 0, 0, 0.8); }
+    .photo-zoom-nav.prev { left: 20px; }
+    .photo-zoom-nav.next { right: 20px; }
+    .photo-zoom-nav.disabled { opacity: 0.3; cursor: not-allowed; }
+    .photo-zoom-counter { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 14px; background: rgba(0, 0, 0, 0.5); padding: 8px 16px; border-radius: 20px; z-index: 10003; }
+    .photo-zoom-hint { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 12px; background: rgba(0, 0, 0, 0.7); padding: 8px 16px; border-radius: 20px; z-index: 10003; text-align: center; line-height: 1.5; }
+    .photo-zoom-hint.hidden { display: none; }
     .detail-modal-info {
       flex: 1 1 380px;
       min-width: 280px;
@@ -324,6 +340,16 @@
     </div>
   </div>
 
+  <!-- 사진 확대/축소 오버레이 (상세 모달 내 사진 클릭 시) -->
+  <div id="photoZoomOverlay" class="photo-zoom-overlay">
+    <span class="photo-zoom-close" id="photoZoomClose">&times;</span>
+    <div class="photo-zoom-hint" id="photoZoomHint">Ctrl + 휠: 확대/축소 | 휠: 스크롤 이동 | ←/→: 사진 전환</div>
+    <button type="button" class="photo-zoom-nav prev" id="photoZoomPrev">‹</button>
+    <button type="button" class="photo-zoom-nav next" id="photoZoomNext">›</button>
+    <img id="photoZoomImg" class="photo-zoom-img" src="" alt="확대 사진">
+    <div class="photo-zoom-counter" id="photoZoomCounter"></div>
+  </div>
+
   <!-- 상담이력 전용 간단한 모달 -->
   <div id="counselingModal" class="counseling-modal-overlay" aria-hidden="true">
     <div class="counseling-modal-box">
@@ -371,7 +397,6 @@
 
     const PREFIXES = ['nutricia-x9fQ2kM7-1', 'nutricia-aL4pZ8Tq-2', 'nutricia-nu7VnCwR3H-3', 'nutricia-MK2rP9dS-4'];
     const PROJECT_LABELS = ['아이베', '림인터네셔널', '크린랩', '몰테일'];
-    const PHOTO_VIEW_URL = 'photo_view.html';
 
     const firebaseConfig = {
       apiKey: "AIzaSyCxNwnAzMn0JUkHGDXgY4taTPJYeABDohg",
@@ -1324,34 +1349,179 @@
       const isLegacy = !!d._isLegacy;
       const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
       const container = document.getElementById('detailModalPhotos');
-      const photoViewUrl = PHOTO_VIEW_URL + '?id=' + encodeURIComponent(id) +
-        (dateKey ? '&dateKey=' + encodeURIComponent(dateKey) : '') +
-        (isLegacy ? '&legacy=1' : '') +
-        '&prefix=' + encodeURIComponent(prefix);
-      const photoViewBtnHtml = '<p style="margin-bottom:12px;">' +
-        '<a href="' + photoViewUrl + '" target="_blank" rel="noopener" class="btn btn-primary" style="display:inline-block;text-decoration:none;padding:8px 16px;">' +
-        '사진 새 창에서 보기 (확대/축소·드래그·키보드 지원)</a></p>';
       get(child(dbRef(db), subPath)).then(snap => {
         if (!snap.exists()) {
-          container.innerHTML = photoViewBtnHtml + '<p class="no-image">해당 접수 데이터가 없습니다.</p>';
+          container.innerHTML = '<p class="no-image">해당 접수 데이터가 없습니다.</p>';
           return;
         }
         const data = snap.val();
         const p1List = getPhotoListFromData(data, 'photo1', 'photo1List');
         const p2List = getPhotoListFromData(data, 'photo2', 'photo2List');
         const p3List = getPhotoListFromData(data, 'photo3', 'photo3List');
-        let html = photoViewBtnHtml + '<div class="detail-modal-photo-box"><h3>1. 구매 시 영수증</h3><div class="caption">업로드된 사진</div>';
-        if (p1List.length) p1List.forEach((url) => { html += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="영수증">'; });
+        const allPhotos = [];
+        p1List.forEach(url => allPhotos.push({ url, label: '구매 시 영수증' }));
+        p2List.forEach(url => allPhotos.push({ url, label: '제품 앞면' }));
+        p3List.forEach(url => allPhotos.push({ url, label: '제품 뒷면/바닥면' }));
+
+        let html = '<div class="detail-modal-photo-box"><h3>1. 구매 시 영수증</h3><div class="caption">업로드된 사진 (클릭 시 확대)</div>';
+        if (p1List.length) p1List.forEach((url) => { html += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="영수증" class="detail-modal-photo-img" data-url="' + url.replace(/"/g, '&quot;') + '">'; });
         else html += '<div class="no-image">없음</div>';
-        html += '</div><div class="detail-modal-photo-box"><h3>2. 제품 앞면</h3><div class="caption">업로드된 사진</div>';
-        if (p2List.length) p2List.forEach((url) => { html += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="제품 앞면">'; });
+        html += '</div><div class="detail-modal-photo-box"><h3>2. 제품 앞면</h3><div class="caption">업로드된 사진 (클릭 시 확대)</div>';
+        if (p2List.length) p2List.forEach((url) => { html += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="제품 앞면" class="detail-modal-photo-img" data-url="' + url.replace(/"/g, '&quot;') + '">'; });
         else html += '<div class="no-image">없음</div>';
-        html += '</div><div class="detail-modal-photo-box"><h3>3. 제품 뒷면/바닥면</h3><div class="caption">업로드된 사진</div>';
-        if (p3List.length) p3List.forEach((url) => { html += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="제품 뒷면">'; });
+        html += '</div><div class="detail-modal-photo-box"><h3>3. 제품 뒷면/바닥면</h3><div class="caption">업로드된 사진 (클릭 시 확대)</div>';
+        if (p3List.length) p3List.forEach((url) => { html += '<img src="' + url.replace(/"/g, '&quot;') + '" alt="제품 뒷면" class="detail-modal-photo-img" data-url="' + url.replace(/"/g, '&quot;') + '">'; });
         else html += '<div class="no-image">없음</div>';
         html += '</div>';
         container.innerHTML = html;
-      }).catch(() => { container.innerHTML = photoViewBtnHtml + '<p class="no-image">사진을 불러올 수 없습니다.</p>'; });
+
+        initPhotoZoomOverlay(allPhotos);
+      }).catch(() => { container.innerHTML = '<p class="no-image">사진을 불러올 수 없습니다.</p>'; });
+    }
+
+    let _photoZoomState = null;
+    function initPhotoZoomOverlay(allPhotos) {
+      const overlay = document.getElementById('photoZoomOverlay');
+      const zoomImg = document.getElementById('photoZoomImg');
+      const closeBtn = document.getElementById('photoZoomClose');
+      const prevBtn = document.getElementById('photoZoomPrev');
+      const nextBtn = document.getElementById('photoZoomNext');
+      const counter = document.getElementById('photoZoomCounter');
+      const hint = document.getElementById('photoZoomHint');
+      if (!overlay || !zoomImg) return;
+
+      _photoZoomState = {
+        allPhotos,
+        currentPhotoIndex: -1,
+        zoomLevel: 1.0,
+        translateX: 0,
+        translateY: 0,
+        isDragging: false,
+        dragStartX: 0, dragStartY: 0, dragStartTranslateX: 0, dragStartTranslateY: 0,
+        minZoom: 1.0, maxZoom: 5.0, zoomStep: 0.1
+      };
+
+      const constrainPosition = () => {
+        const s = _photoZoomState;
+        if (!s || s.zoomLevel <= 1.0) { if (s) { s.translateX = 0; s.translateY = 0; } return; }
+        const imgRect = zoomImg.getBoundingClientRect();
+        const overlayRect = overlay.getBoundingClientRect();
+        const imgDisplayWidth = imgRect.width / s.zoomLevel;
+        const imgDisplayHeight = imgRect.height / s.zoomLevel;
+        const scaledWidth = imgDisplayWidth * s.zoomLevel, scaledHeight = imgDisplayHeight * s.zoomLevel;
+        const maxX = Math.max(0, (scaledWidth - overlayRect.width) / 2);
+        const maxY = Math.max(0, (scaledHeight - overlayRect.height) / 2);
+        s.translateX = Math.max(-maxX, Math.min(maxX, s.translateX));
+        s.translateY = Math.max(-maxY, Math.min(maxY, s.translateY));
+      };
+      const applyTransform = () => {
+        const s = _photoZoomState;
+        if (!s) return;
+        zoomImg.style.transform = `translate(${s.translateX}px, ${s.translateY}px) scale(${s.zoomLevel})`;
+        zoomImg.classList.toggle('zoomed', s.zoomLevel > 1.0);
+      };
+      const zoomIn = () => {
+        const s = _photoZoomState;
+        if (!s) return;
+        const oldZoom = s.zoomLevel;
+        s.zoomLevel = Math.min(s.zoomLevel + s.zoomStep, s.maxZoom);
+        const zoomRatio = s.zoomLevel / oldZoom;
+        s.translateX *= zoomRatio; s.translateY *= zoomRatio;
+        constrainPosition(); applyTransform();
+      };
+      const zoomOut = () => {
+        const s = _photoZoomState;
+        if (!s) return;
+        const oldZoom = s.zoomLevel;
+        s.zoomLevel = Math.max(s.zoomLevel - s.zoomStep, s.minZoom);
+        const zoomRatio = s.zoomLevel / oldZoom;
+        s.translateX *= zoomRatio; s.translateY *= zoomRatio;
+        constrainPosition(); applyTransform();
+      };
+      const resetZoom = () => {
+        const s = _photoZoomState;
+        if (s) { s.zoomLevel = 1.0; s.translateX = 0; s.translateY = 0; }
+        applyTransform();
+      };
+      const showZoom = (index) => {
+        const s = _photoZoomState;
+        if (!s || index < 0 || index >= s.allPhotos.length) return;
+        s.currentPhotoIndex = index;
+        resetZoom();
+        zoomImg.src = s.allPhotos[index].url;
+        counter.textContent = (index + 1) + ' / ' + s.allPhotos.length;
+        prevBtn.classList.toggle('disabled', s.currentPhotoIndex <= 0);
+        nextBtn.classList.toggle('disabled', s.currentPhotoIndex >= s.allPhotos.length - 1);
+        overlay.classList.add('show');
+        hint.classList.remove('hidden');
+        setTimeout(() => hint.classList.add('hidden'), 5000);
+      };
+      const hideZoom = () => {
+        overlay.classList.remove('show');
+        zoomImg.src = '';
+        resetZoom();
+        if (_photoZoomState) _photoZoomState.currentPhotoIndex = -1;
+      };
+      const showPrev = () => { const s = _photoZoomState; if (s && s.currentPhotoIndex > 0) showZoom(s.currentPhotoIndex - 1); };
+      const showNext = () => { const s = _photoZoomState; if (s && s.currentPhotoIndex < s.allPhotos.length - 1) showZoom(s.currentPhotoIndex + 1); };
+
+      if (!overlay.dataset.photoZoomInited) {
+        overlay.dataset.photoZoomInited = '1';
+        overlay.onclick = (e) => { if (e.target === overlay || e.target === closeBtn) hideZoom(); };
+        prevBtn.onclick = (e) => { e.stopPropagation(); if (!prevBtn.classList.contains('disabled')) showPrev(); };
+        nextBtn.onclick = (e) => { e.stopPropagation(); if (!nextBtn.classList.contains('disabled')) showNext(); };
+        document.addEventListener('keydown', (e) => {
+          if (!overlay.classList.contains('show') || !_photoZoomState) return;
+          if (e.key === 'ArrowLeft') { e.preventDefault(); showPrev(); }
+          else if (e.key === 'ArrowRight') { e.preventDefault(); showNext(); }
+          else if (e.key === 'Escape') { e.preventDefault(); hideZoom(); }
+          else if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn(); }
+          else if (e.key === '-' || e.key === '_') { e.preventDefault(); zoomOut(); }
+          else if (e.key === '0') { e.preventDefault(); resetZoom(); }
+        });
+        overlay.addEventListener('wheel', (e) => {
+          const s = _photoZoomState;
+          if (!overlay.classList.contains('show') || !s) return;
+          e.preventDefault();
+          if (e.ctrlKey || e.metaKey) {
+            if (e.deltaY < 0) zoomIn(); else zoomOut();
+          } else if (s.zoomLevel > 1.0) {
+            s.translateX -= e.deltaX * 2; s.translateY -= e.deltaY * 2;
+            constrainPosition(); applyTransform();
+          }
+        }, { passive: false });
+        zoomImg.onmousedown = (e) => {
+          const s = _photoZoomState;
+          if (!s || s.zoomLevel <= 1.0) return;
+          s.isDragging = true;
+          s.dragStartX = e.clientX; s.dragStartY = e.clientY;
+          s.dragStartTranslateX = s.translateX; s.dragStartTranslateY = s.translateY;
+          zoomImg.style.cursor = 'grabbing';
+        };
+        document.addEventListener('mousemove', (e) => {
+          const s = _photoZoomState;
+          if (!s || !s.isDragging || !overlay.classList.contains('show')) return;
+          s.translateX = s.dragStartTranslateX + (e.clientX - s.dragStartX);
+          s.translateY = s.dragStartTranslateY + (e.clientY - s.dragStartY);
+          constrainPosition(); applyTransform();
+        });
+        document.addEventListener('mouseup', () => {
+          const s = _photoZoomState;
+          if (s && s.isDragging) {
+            s.isDragging = false;
+            if (s.zoomLevel > 1.0) zoomImg.style.cursor = 'move';
+          }
+        });
+      }
+
+      document.getElementById('detailModalPhotos').querySelectorAll('.detail-modal-photo-img').forEach((img) => {
+        img.onclick = () => {
+          const url = img.getAttribute('data-url');
+          if (!url || !_photoZoomState) return;
+          const idx = _photoZoomState.allPhotos.findIndex(p => p.url === url);
+          if (idx >= 0) showZoom(idx);
+        };
+      });
     }
 
     function attachDetailModalCheckboxListeners() {
