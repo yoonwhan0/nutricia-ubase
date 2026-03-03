@@ -338,6 +338,37 @@
     <div id="tab-stats" class="dashboard-tab-content">
     <div class="dashboard-section">
       <div class="dashboard-card">
+        <h3 class="card-group-title">실적 체크 통계 (인센티브 기준)</h3>
+        <p class="hint">상담사별 유선안내완료 체크한 고객 수를 통관번호 기준으로 집계합니다. 동일 고객이 여러 번 접수해도 1명으로 집계됩니다. 환불→교환 전환 건수는 별도로 집계됩니다. (접수일 기준) 비워두면 전체 조회.</p>
+        <div class="toolbar">
+          <label><input type="checkbox" id="performanceDateAll" checked> 전체</label>
+          <label style="margin-left:8px;">기간:</label>
+          <input type="date" id="performanceStartDate" value="" disabled>
+          <span>~</span>
+          <input type="date" id="performanceEndDate" value="" disabled>
+          <label style="margin-left: 12px;">상담사:</label>
+          <select id="performanceAccountSelect">
+            <option value="">전체</option>
+            <option value="cs1@ubase.co.kr">cs1</option>
+            <option value="cs2@ubase.co.kr">cs2</option>
+            <option value="cs3@ubase.co.kr">cs3</option>
+            <option value="cs4@ubase.co.kr">cs4</option>
+            <option value="cs5@ubase.co.kr">cs5</option>
+            <option value="cs6@ubase.co.kr">cs6</option>
+            <option value="cs7@ubase.co.kr">cs7</option>
+            <option value="cs8@ubase.co.kr">cs8</option>
+            <option value="cs9@ubase.co.kr">cs9</option>
+            <option value="cs10@ubase.co.kr">cs10</option>
+          </select>
+          <button type="button" id="loadPerformanceBtn">조회</button>
+          <button type="button" id="downloadPerformanceBtn" style="background: #28a745; display: none;">CSV</button>
+        </div>
+        <div id="performanceLoading" class="loading" style="display: none;">조회 중…</div>
+        <div id="performanceResult"></div>
+      </div>
+    </div>
+    <div class="dashboard-section">
+      <div class="dashboard-card">
         <h3 class="card-group-title">상담사별 실적·분배 이력</h3>
         <p class="hint">기간을 선택해 상담사별 분배·처리 현황을 조회합니다. (접수일 기준) 비워두면 전체 조회. 상담사별 요약 또는 날짜별 상세 보기를 선택할 수 있습니다.</p>
         <div class="toolbar">
@@ -461,6 +492,14 @@
     const downloadStatsBtn = document.getElementById('downloadStatsBtn');
     const statsLoading = document.getElementById('statsLoading');
     const statsResult = document.getElementById('statsResult');
+    const performanceDateAll = document.getElementById('performanceDateAll');
+    const performanceStartDate = document.getElementById('performanceStartDate');
+    const performanceEndDate = document.getElementById('performanceEndDate');
+    const performanceAccountSelect = document.getElementById('performanceAccountSelect');
+    const loadPerformanceBtn = document.getElementById('loadPerformanceBtn');
+    const downloadPerformanceBtn = document.getElementById('downloadPerformanceBtn');
+    const performanceLoading = document.getElementById('performanceLoading');
+    const performanceResult = document.getElementById('performanceResult');
     const resetDistributionBtn = document.getElementById('resetDistributionBtn');
     const loadRemainingBtn = document.getElementById('loadRemainingBtn');
     const remainingLoading = document.getElementById('remainingLoading');
@@ -529,6 +568,25 @@
     }
     if (statsDateAllCb) statsDateAllCb.addEventListener('change', syncStatsDateAll);
     syncStatsDateAll();
+
+    // 실적 체크 통계 기본값: 전체 (날짜 비움)
+    function syncPerformanceDateAll() {
+      const all = performanceDateAll && performanceDateAll.checked;
+      if (performanceStartDate) performanceStartDate.disabled = !!all;
+      if (performanceEndDate) performanceEndDate.disabled = !!all;
+      if (all) {
+        performanceStartDate.value = '';
+        performanceEndDate.value = '';
+      } else if (performanceStartDate && performanceEndDate && !performanceStartDate.value) {
+        const today = new Date();
+        const monthAgo = new Date(today);
+        monthAgo.setDate(monthAgo.getDate() - 30);
+        performanceStartDate.value = monthAgo.toISOString().split('T')[0];
+        performanceEndDate.value = today.toISOString().split('T')[0];
+      }
+    }
+    if (performanceDateAll) performanceDateAll.addEventListener('change', syncPerformanceDateAll);
+    syncPerformanceDateAll();
 
     const DISTRIBUTION_PATH = 'outbound_distribution/assignments';
     // 분배 이력: Firebase 저장 (대시보드가 관리, CS는 읽기만)
@@ -701,6 +759,44 @@
       return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
+    // 연락처 정규화 함수 (고객 기준 집계용)
+    function normalizePhone(v) {
+      if (!v) return '';
+      const digits = String(v).replace(/\D/g, '').trim();
+      if (digits.startsWith('82') && digits.length > 10) return digits.slice(2);
+      return digits;
+    }
+
+    // 연락처 정규화 (고객 식별용)
+    function canonicalPhone(v) {
+      const d = normalizePhone(v);
+      if (!d) return '';
+      if (d.length === 11 && d.startsWith('82')) return d.slice(2);
+      if (d.length === 9 && d.startsWith('10')) return '0' + d;
+      if (d.length === 10 && d.startsWith('010')) return d;
+      if (d.length === 10) return d;
+      return d;
+    }
+
+    // 통관번호 정규화 (고객 식별용 - 우선순위)
+    function normalizeCustomsCode(v) {
+      if (!v) return '';
+      return String(v).replace(/[^0-9A-Za-z]/g, '').toUpperCase().trim();
+    }
+
+    // 고객 식별자 반환 (통관번호 우선, 없으면 휴대폰 번호)
+    function getCustomerIdentifier(item) {
+      if (item && item.customsCode) {
+        const normalized = normalizeCustomsCode(item.customsCode);
+        if (normalized && normalized.length >= 10) return 'customs_' + normalized; // 통관번호가 10자리 이상이면 사용
+      }
+      if (item && item.contact) {
+        const normalized = canonicalPhone(item.contact);
+        if (normalized && normalized.length >= 10) return 'phone_' + normalized; // 휴대폰 번호가 10자리 이상이면 사용
+      }
+      return null; // 식별 불가
+    }
+
     // 유선안내완료 여부: processing history에서 최신 변경 기준 (체크→해제 시 현재 미완료로 판정)
     function isCallCompleteForKey(processingHistory) {
       if (!Array.isArray(processingHistory) || processingHistory.length === 0) return false;
@@ -724,6 +820,67 @@
         }
       }
       return null;
+    }
+
+    // 환불→교환 전환 여부 확인 (처음 환불만 체크 → 나중에 교환 체크)
+    function isRefundToExchangeConversion(processingHistory, currentItem) {
+      if (!Array.isArray(processingHistory) || processingHistory.length === 0) {
+        // processing_history가 없으면 현재 상태로 판단
+        // 환불만 체크되어 있고 교환은 체크 안 된 경우는 전환 아님 (원래 환불 요청)
+        // 환불과 교환 둘 다 체크된 경우는 전환으로 간주할 수 있지만, 이력이 없으면 확실하지 않음
+        return false;
+      }
+      
+      // 시간순으로 정렬 (오래된 것부터)
+      const sorted = [...processingHistory].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      
+      let hadRefundOnly = false; // 처음에 환불만 체크되어 있었는지
+      let hasExchange = false; // 나중에 교환이 체크되었는지
+      
+      // 시간순으로 확인
+      for (const h of sorted) {
+        if (h.changes && typeof h.changes === 'string') {
+          const changes = h.changes;
+          
+          // 환불 체크 확인
+          if (changes.includes('환불: 체크')) {
+            // 이 시점에서 교환이 체크되어 있지 않았다면 환불만 체크된 상태
+            if (!hasExchange) {
+              hadRefundOnly = true;
+            }
+          }
+          if (changes.includes('환불: 해제')) {
+            hadRefundOnly = false;
+          }
+          
+          // 교환 체크 확인
+          if (changes.includes('교환: 체크')) {
+            hasExchange = true;
+          }
+          if (changes.includes('교환: 해제')) {
+            hasExchange = false;
+          }
+        }
+      }
+      
+      // 현재 상태도 확인 (이력이 있지만 최신 상태 반영)
+      if (currentItem) {
+        const currentHasRefund = !!currentItem.refundDone;
+        const currentHasExchange = !!currentItem.exchangeDone;
+        
+        // 현재 환불만 체크되어 있으면 전환 아님
+        if (currentHasRefund && !currentHasExchange) {
+          return false;
+        }
+        
+        // 현재 교환이 체크되어 있고, 이전에 환불만 있었던 경우 전환으로 간주
+        if (currentHasExchange && hadRefundOnly) {
+          return true;
+        }
+      }
+      
+      // 이력만으로 판단: 환불만 있었고 나중에 교환이 체크된 경우
+      return hadRefundOnly && hasExchange;
     }
     function showAdminUI(user) {
       if (adminUserEmailEl) adminUserEmailEl.textContent = user.email || '';
@@ -869,14 +1026,35 @@
         distributionHistoryMap = await loadDistributionHistoryFromFirebase();
         await loadProcessingAndCounselingFromFirebase();
 
-        // 상담사별 통계: 총/미특정/증빙오류 각각 분배건·처리건
+        // 전체 접수건 로드 (연락처 정보 필요)
+        const allItemsForStats = [];
+        for (const prefix of PREFIXES) {
+          const snap = await get(dbRef(db, prefix + '/submissions_meta'));
+          if (snap.exists()) {
+            snap.forEach((dateSnap) => {
+              const dateKey = dateSnap.key;
+              if (!/^\d{8}$/.test(dateKey)) return;
+              dateSnap.forEach((inner) => {
+                const item = inner.val();
+                allItemsForStats.push({
+                  ...item,
+                  _prefix: prefix,
+                  id: inner.key,
+                  _dateKey: dateKey
+                });
+              });
+            });
+          }
+        }
+
+        // 상담사별 통계: 총/미특정/증빙오류 각각 분배건·처리건 (고객 기준 집계)
         const accountStats = {};
         CS_ACCOUNTS.forEach(email => {
           accountStats[email] = {
             account: email,
-            totalDist: 0, totalComplete: 0,
-            noCheckDist: 0, noCheckComplete: 0,
-            proofErrorDist: 0, proofErrorComplete: 0
+            totalDist: 0, totalComplete: 0, totalCompleteCustomers: new Set(), totalCompleteCount: 0,
+            noCheckDist: 0, noCheckComplete: 0, noCheckCompleteCustomers: new Set(), noCheckCompleteCount: 0,
+            proofErrorDist: 0, proofErrorComplete: 0, proofErrorCompleteCustomers: new Set(), proofErrorCompleteCount: 0
           };
         });
 
@@ -907,31 +1085,50 @@
           const ph = processingHistoryMap.get(key) || [];
           const processedBy = getProcessedByAccount(ph);
           if (processedBy && processedBy.toLowerCase() === entry.account.toLowerCase()) {
-            acc.totalComplete++;
-            if (entry._category === 'noCheck') acc.noCheckComplete++;
-            else acc.proofErrorComplete++;
+            // 접수건 수 집계
+            acc.totalCompleteCount++;
+            if (entry._category === 'noCheck') acc.noCheckCompleteCount++;
+            else acc.proofErrorCompleteCount++;
+
+            // 고객(연락처) 기준 집계
+            const item = allItemsForStats.find(it => `${it._prefix}_${it._dateKey}_${it.id}` === key);
+            if (item && item.contact) {
+              const normalizedContact = canonicalPhone(item.contact);
+              if (normalizedContact) {
+                acc.totalCompleteCustomers.add(normalizedContact);
+                if (entry._category === 'noCheck') acc.noCheckCompleteCustomers.add(normalizedContact);
+                else acc.proofErrorCompleteCustomers.add(normalizedContact);
+              }
+            }
           }
+        });
+
+        // Set을 숫자로 변환
+        Object.values(accountStats).forEach(stat => {
+          stat.totalComplete = stat.totalCompleteCustomers.size;
+          stat.noCheckComplete = stat.noCheckCompleteCustomers.size;
+          stat.proofErrorComplete = stat.proofErrorCompleteCustomers.size;
         });
 
         const rangeLabel = useDateFilter && startDate && endDate ? (' (' + startDate + ' ~ ' + endDate + ')') : ' (전체)';
         let html = '<table class="stats-table">';
-        html += '<caption style="caption-side:top;text-align:left;font-weight:600;margin-bottom:8px;">상담사별 요약' + rangeLabel + ' (처리건 = 해당 상담사가 유선안내완료 체크한 건)</caption>';
+        html += '<caption style="caption-side:top;text-align:left;font-weight:600;margin-bottom:8px;">상담사별 요약' + rangeLabel + ' (처리 고객수 = 해당 상담사가 유선안내완료 체크한 고객 수, 괄호 안은 접수건수)</caption>';
         html += '<thead><tr>';
         html += '<th>상담사</th>';
-        html += '<th>총 분배</th><th>총 처리건</th>';
-        html += '<th>미특정 분배건</th><th>미특정 처리건</th>';
-        html += '<th>증빙오류 접수건</th><th>증빙오류 처리건</th>';
+        html += '<th>총 분배</th><th>총 처리 고객수<br>(접수건수)</th>';
+        html += '<th>미특정 분배건</th><th>미특정 처리 고객수<br>(접수건수)</th>';
+        html += '<th>증빙오류 접수건</th><th>증빙오류 처리 고객수<br>(접수건수)</th>';
         html += '</tr></thead><tbody>';
 
         Object.values(accountStats).forEach(stat => {
           html += '<tr>';
           html += '<td class="text-left">' + escapeHtml(stat.account) + '</td>';
           html += '<td class="number">' + stat.totalDist + '</td>';
-          html += '<td class="number">' + stat.totalComplete + '</td>';
+          html += '<td class="number">' + stat.totalComplete + ' <span style="color:#666; font-size:11px;">(' + stat.totalCompleteCount + ')</span></td>';
           html += '<td class="number">' + stat.noCheckDist + '</td>';
-          html += '<td class="number">' + stat.noCheckComplete + '</td>';
+          html += '<td class="number">' + stat.noCheckComplete + ' <span style="color:#666; font-size:11px;">(' + stat.noCheckCompleteCount + ')</span></td>';
           html += '<td class="number">' + stat.proofErrorDist + '</td>';
-          html += '<td class="number">' + stat.proofErrorComplete + '</td>';
+          html += '<td class="number">' + stat.proofErrorComplete + ' <span style="color:#666; font-size:11px;">(' + stat.proofErrorCompleteCount + ')</span></td>';
           html += '</tr>';
         });
         html += '</tbody></table>';
@@ -942,6 +1139,212 @@
       } finally {
         statsLoading.style.display = 'none';
       }
+    }
+
+    // 실적 체크 통계 조회 (통관번호 기준 고객 수 집계)
+    let performanceStatsData = null;
+    async function loadPerformanceStats() {
+      if (!db) {
+        performanceResult.innerHTML = '<div class="msg error">Firebase가 초기화되지 않았습니다.</div>';
+        return;
+      }
+
+      const useDateFilter = !(performanceDateAll && performanceDateAll.checked);
+      const startDate = performanceStartDate.value;
+      const endDate = performanceEndDate.value;
+      const accountFilter = performanceAccountSelect.value;
+
+      if (useDateFilter && (!startDate || !endDate)) {
+        performanceResult.innerHTML = '<div class="msg error">전체가 아닐 경우 기간을 선택해주세요.</div>';
+        return;
+      }
+
+      performanceLoading.style.display = 'block';
+      performanceResult.innerHTML = '';
+      downloadPerformanceBtn.style.display = 'none';
+
+      try {
+        let startTime = 0, endTime = Number.MAX_SAFE_INTEGER;
+        if (useDateFilter && startDate && endDate) {
+          startTime = new Date(startDate + 'T00:00:00').getTime();
+          endTime = new Date(endDate + 'T23:59:59').getTime();
+        }
+
+        await loadProcessingAndCounselingFromFirebase();
+
+        // 전체 접수건 로드
+        const allItemsForPerformance = [];
+        for (const prefix of PREFIXES) {
+          const snap = await get(dbRef(db, prefix + '/submissions_meta'));
+          if (snap.exists()) {
+            snap.forEach((dateSnap) => {
+              const dateKey = dateSnap.key;
+              if (!/^\d{8}$/.test(dateKey)) return;
+              const y = dateKey.substring(0, 4), m = dateKey.substring(4, 6), d = dateKey.substring(6, 8);
+              const itemDate = new Date(y + '-' + m + '-' + d + 'T00:00:00').getTime();
+              if (itemDate >= startTime && itemDate <= endTime) {
+                dateSnap.forEach((inner) => {
+                  const item = inner.val();
+                  allItemsForPerformance.push({
+                    ...item,
+                    _prefix: prefix,
+                    id: inner.key,
+                    _dateKey: dateKey
+                  });
+                });
+              }
+            });
+          }
+        }
+
+        // 상담사별 실적 통계: 유선안내완료 체크한 고객 수 (통관번호 기준)
+        const accountPerformance = {};
+        CS_ACCOUNTS.forEach(email => {
+          if (accountFilter && email !== accountFilter) return;
+          accountPerformance[email] = {
+            account: email,
+            completeCustomers: new Set(), // 통관번호 기준 고객 Set
+            completeCount: 0, // 접수건 수
+            refundToExchangeCount: 0 // 환불→교환 전환 건수
+          };
+        });
+
+        // 유선안내완료 체크한 건만 집계
+        allItemsForPerformance.forEach(item => {
+          const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+          const ph = processingHistoryMap.get(key) || [];
+          const isCallComplete = ph.length > 0 ? isCallCompleteForKey(ph) : (!!item.callComplete);
+          
+          if (isCallComplete) {
+            const processedBy = getProcessedByAccount(ph);
+            if (processedBy && CS_ACCOUNTS.includes(processedBy)) {
+              if (accountFilter && processedBy !== accountFilter) return;
+              
+              const acc = accountPerformance[processedBy];
+              if (acc) {
+                acc.completeCount++;
+                
+                // 통관번호 우선, 없으면 휴대폰 번호
+                const customerId = getCustomerIdentifier(item);
+                if (customerId) {
+                  acc.completeCustomers.add(customerId);
+                }
+                
+                // 환불→교환 전환 여부 확인
+                if (isRefundToExchangeConversion(ph, item)) {
+                  acc.refundToExchangeCount++;
+                }
+              }
+            }
+          }
+        });
+
+        // Set을 숫자로 변환
+        Object.values(accountPerformance).forEach(stat => {
+          stat.completeCustomerCount = stat.completeCustomers.size;
+        });
+
+        // 필터링된 상담사만 표시
+        const filteredStats = Object.values(accountPerformance).filter(stat => 
+          !accountFilter || stat.account === accountFilter
+        );
+
+        if (filteredStats.length === 0) {
+          performanceResult.innerHTML = '<div class="msg info">조회된 데이터가 없습니다.</div>';
+          performanceLoading.style.display = 'none';
+          return;
+        }
+
+        // 테이블 생성
+        let html = '<table class="stats-table" style="margin-top: 12px;">';
+        html += '<thead><tr>';
+        html += '<th>상담사</th>';
+        html += '<th>유선안내완료 고객 수<br><small style="font-weight: normal; color: #666;">(통관번호 기준)</small></th>';
+        html += '<th>유선안내완료 접수건 수</th>';
+        html += '<th>환불→교환 전환 건수<br><small style="font-weight: normal; color: #666;">(별도 인센티브)</small></th>';
+        html += '</tr></thead><tbody>';
+
+        filteredStats.forEach(stat => {
+          html += '<tr>';
+          html += '<td class="text-left">' + escapeHtml(stat.account.replace('@ubase.co.kr', '')) + '</td>';
+          html += '<td class="number" style="font-weight: bold; color: #28a745;">' + stat.completeCustomerCount + '명</td>';
+          html += '<td class="number">' + stat.completeCount + '건</td>';
+          html += '<td class="number" style="font-weight: bold; color: #ff6b00;">' + stat.refundToExchangeCount + '건</td>';
+          html += '</tr>';
+        });
+
+        // 합계
+        const totalCustomers = new Set();
+        let totalCount = 0;
+        let totalRefundToExchange = 0;
+        filteredStats.forEach(stat => {
+          stat.completeCustomers.forEach(id => totalCustomers.add(id));
+          totalCount += stat.completeCount;
+          totalRefundToExchange += stat.refundToExchangeCount;
+        });
+
+        html += '<tr style="background: #f0f0f0; font-weight: bold;">';
+        html += '<td class="text-left">합계</td>';
+        html += '<td class="number" style="color: #28a745;">' + totalCustomers.size + '명</td>';
+        html += '<td class="number">' + totalCount + '건</td>';
+        html += '<td class="number" style="color: #ff6b00;">' + totalRefundToExchange + '건</td>';
+        html += '</tr>';
+
+        html += '</tbody></table>';
+
+        performanceResult.innerHTML = html;
+        performanceStatsData = filteredStats;
+        downloadPerformanceBtn.style.display = 'inline-block';
+      } catch (err) {
+        console.error('실적 체크 통계 조회 오류:', err);
+        performanceResult.innerHTML = '<div class="msg error">조회 중 오류가 발생했습니다: ' + escapeHtml(err.message) + '</div>';
+      } finally {
+        performanceLoading.style.display = 'none';
+      }
+    }
+
+    // 실적 체크 통계 CSV 다운로드
+    function downloadPerformanceStatsCSV() {
+      if (!performanceStatsData || performanceStatsData.length === 0) {
+        alert('다운로드할 데이터가 없습니다.');
+        return;
+      }
+
+      const useDateFilter = !(performanceDateAll && performanceDateAll.checked);
+      const startDate = performanceStartDate.value || '전체';
+      const endDate = performanceEndDate.value || '전체';
+      const accountFilter = performanceAccountSelect.value || '전체';
+
+      let csv = '실적 체크 통계 (통관번호 기준 고객 수)\n';
+      csv += '조회 기간: ' + (useDateFilter ? (startDate + ' ~ ' + endDate) : '전체') + '\n';
+      csv += '상담사 필터: ' + (accountFilter === '전체' ? '전체' : accountFilter.replace('@ubase.co.kr', '')) + '\n';
+      csv += '생성일시: ' + new Date().toLocaleString('ko-KR') + '\n\n';
+      csv += '상담사,유선안내완료 고객 수(명),유선안내완료 접수건 수(건),환불→교환 전환 건수(건)\n';
+
+      performanceStatsData.forEach(stat => {
+        csv += stat.account.replace('@ubase.co.kr', '') + ',' + stat.completeCustomerCount + ',' + stat.completeCount + ',' + stat.refundToExchangeCount + '\n';
+      });
+
+      // 합계
+      const totalCustomers = new Set();
+      let totalCount = 0;
+      let totalRefundToExchange = 0;
+      performanceStatsData.forEach(stat => {
+        stat.completeCustomers.forEach(id => totalCustomers.add(id));
+        totalCount += stat.completeCount;
+        totalRefundToExchange += stat.refundToExchangeCount;
+      });
+      csv += '합계,' + totalCustomers.size + ',' + totalCount + ',' + totalRefundToExchange + '\n';
+
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', '실적체크통계_' + new Date().toISOString().split('T')[0] + '.csv');
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
 
     // 전체 접수건 조회 (유형별)
@@ -1686,8 +2089,29 @@
         distributionHistoryMap = await loadDistributionHistoryFromFirebase();
         await loadProcessingAndCounselingFromFirebase();
 
-        // 날짜별·상담사별: 총/미특정/증빙오류 각각 분배건·처리건
-        const historyByDate = {}; // dateKey -> account -> { totalDist, totalComplete, noCheckDist, noCheckComplete, proofErrorDist, proofErrorComplete }
+        // 전체 접수건 로드 (연락처 정보 필요)
+        const allItemsForHistory = [];
+        for (const prefix of PREFIXES) {
+          const snap = await get(dbRef(db, prefix + '/submissions_meta'));
+          if (snap.exists()) {
+            snap.forEach((dateSnap) => {
+              const dateKey = dateSnap.key;
+              if (!/^\d{8}$/.test(dateKey)) return;
+              dateSnap.forEach((inner) => {
+                const item = inner.val();
+                allItemsForHistory.push({
+                  ...item,
+                  _prefix: prefix,
+                  id: inner.key,
+                  _dateKey: dateKey
+                });
+              });
+            });
+          }
+        }
+
+        // 날짜별·상담사별: 총/미특정/증빙오류 각각 분배건·처리건 (고객 기준 집계)
+        const historyByDate = {}; // dateKey -> account -> { totalDist, totalComplete, totalCompleteCustomers, totalCompleteCount, ... }
 
         distributionHistoryMap.forEach((history, key) => {
           if (Array.isArray(history) && history.length > 0) {
@@ -1704,7 +2128,11 @@
 
                 if (!historyByDate[dateKey]) historyByDate[dateKey] = {};
                 const acc = historyByDate[dateKey][account];
-                const def = { totalDist: 0, totalComplete: 0, noCheckDist: 0, noCheckComplete: 0, proofErrorDist: 0, proofErrorComplete: 0 };
+                const def = {
+                  totalDist: 0, totalComplete: 0, totalCompleteCustomers: new Set(), totalCompleteCount: 0,
+                  noCheckDist: 0, noCheckComplete: 0, noCheckCompleteCustomers: new Set(), noCheckCompleteCount: 0,
+                  proofErrorDist: 0, proofErrorComplete: 0, proofErrorCompleteCustomers: new Set(), proofErrorCompleteCount: 0
+                };
                 const s = acc ? { ...acc } : { ...def };
                 s.totalDist++;
                 if (category === 'noCheck') s.noCheckDist++; else s.proofErrorDist++;
@@ -1712,8 +2140,21 @@
                 const ph = processingHistoryMap.get(key) || [];
                 const processedBy = getProcessedByAccount(ph);
                 if (processedBy && processedBy.toLowerCase() === account.toLowerCase()) {
-                  s.totalComplete++;
-                  if (category === 'noCheck') s.noCheckComplete++; else s.proofErrorComplete++;
+                  // 접수건 수 집계
+                  s.totalCompleteCount++;
+                  if (category === 'noCheck') s.noCheckCompleteCount++;
+                  else s.proofErrorCompleteCount++;
+
+                  // 고객(연락처) 기준 집계
+                  const item = allItemsForHistory.find(it => `${it._prefix}_${it._dateKey}_${it.id}` === key);
+                  if (item && item.contact) {
+                    const normalizedContact = canonicalPhone(item.contact);
+                    if (normalizedContact) {
+                      s.totalCompleteCustomers.add(normalizedContact);
+                      if (category === 'noCheck') s.noCheckCompleteCustomers.add(normalizedContact);
+                      else s.proofErrorCompleteCustomers.add(normalizedContact);
+                    }
+                  }
                 }
                 historyByDate[dateKey][account] = s;
               }
@@ -1721,15 +2162,25 @@
           }
         });
 
+        // Set을 숫자로 변환
+        Object.keys(historyByDate).forEach(dateKey => {
+          Object.keys(historyByDate[dateKey]).forEach(account => {
+            const s = historyByDate[dateKey][account];
+            s.totalComplete = s.totalCompleteCustomers.size;
+            s.noCheckComplete = s.noCheckCompleteCustomers.size;
+            s.proofErrorComplete = s.proofErrorCompleteCustomers.size;
+          });
+        });
+
         const rangeLabel = useDateFilter && startDate && endDate ? (' (' + startDate + ' ~ ' + endDate + ')') : ' (전체)';
         const accountLabel = selectedAccount ? (' — ' + selectedAccount) : '';
         let html = '<table class="stats-table stats-history">';
-        html += '<caption style="caption-side:top;text-align:left;font-weight:600;margin-bottom:8px;">날짜별 상세' + rangeLabel + accountLabel + '</caption>';
+        html += '<caption style="caption-side:top;text-align:left;font-weight:600;margin-bottom:8px;">날짜별 상세' + rangeLabel + accountLabel + ' (처리 고객수 = 해당 상담사가 유선안내완료 체크한 고객 수, 괄호 안은 접수건수)</caption>';
         html += '<thead><tr>';
         html += '<th>날짜</th><th>상담사</th>';
-        html += '<th>총 분배</th><th>총 처리건</th>';
-        html += '<th>미특정 분배건</th><th>미특정 처리건</th>';
-        html += '<th>증빙오류 접수건</th><th>증빙오류 처리건</th>';
+        html += '<th>총 분배</th><th>총 처리 고객수<br>(접수건수)</th>';
+        html += '<th>미특정 분배건</th><th>미특정 처리 고객수<br>(접수건수)</th>';
+        html += '<th>증빙오류 접수건</th><th>증빙오류 처리 고객수<br>(접수건수)</th>';
         html += '</tr></thead><tbody>';
 
         const sortedDates = Object.keys(historyByDate).sort().reverse();
@@ -1742,11 +2193,11 @@
             html += '<td>' + dateStr + '</td>';
             html += '<td class="text-left">' + escapeHtml(account) + '</td>';
             html += '<td class="number">' + s.totalDist + '</td>';
-            html += '<td class="number">' + s.totalComplete + '</td>';
+            html += '<td class="number">' + s.totalComplete + ' <span style="color:#666; font-size:11px;">(' + s.totalCompleteCount + ')</span></td>';
             html += '<td class="number">' + s.noCheckDist + '</td>';
-            html += '<td class="number">' + s.noCheckComplete + '</td>';
+            html += '<td class="number">' + s.noCheckComplete + ' <span style="color:#666; font-size:11px;">(' + s.noCheckCompleteCount + ')</span></td>';
             html += '<td class="number">' + s.proofErrorDist + '</td>';
-            html += '<td class="number">' + s.proofErrorComplete + '</td>';
+            html += '<td class="number">' + s.proofErrorComplete + ' <span style="color:#666; font-size:11px;">(' + s.proofErrorCompleteCount + ')</span></td>';
             html += '</tr>';
           });
         });
@@ -1837,6 +2288,16 @@
 
     // 통계 탭: 보기 모드에 따라 loadStats 또는 loadHistory 호출
     if (loadStatsBtn) {
+      if (loadPerformanceBtn) {
+        loadPerformanceBtn.addEventListener('click', () => {
+          loadPerformanceStats();
+        });
+      }
+      if (downloadPerformanceBtn) {
+        downloadPerformanceBtn.addEventListener('click', () => {
+          downloadPerformanceStatsCSV();
+        });
+      }
       loadStatsBtn.addEventListener('click', () => {
         const mode = statsViewMode ? statsViewMode.value : 'byAccount';
         if (mode === 'byDate') {
