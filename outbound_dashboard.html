@@ -821,6 +821,18 @@
       }
       return null;
     }
+    // 후처리관리중 여부: processing history에서 최신 변경 기준
+    function isPostProcessingForKey(processingHistory) {
+      if (!Array.isArray(processingHistory) || processingHistory.length === 0) return false;
+      const sorted = [...processingHistory].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      for (const h of sorted) {
+        if (h.changes && typeof h.changes === 'string') {
+          if (h.changes.includes('후처리관리중: 체크')) return true;
+          if (h.changes.includes('후처리관리중: 해제')) return false;
+        }
+      }
+      return false;
+    }
 
     // 환불→교환 전환 여부 확인 (처음 환불만 체크 → 나중에 교환 체크)
     function isRefundToExchangeConversion(processingHistory, currentItem) {
@@ -1054,7 +1066,8 @@
             account: email,
             totalDist: 0, totalComplete: 0, totalCompleteCustomers: new Set(), totalCompleteCount: 0,
             noCheckDist: 0, noCheckComplete: 0, noCheckCompleteCustomers: new Set(), noCheckCompleteCount: 0,
-            proofErrorDist: 0, proofErrorComplete: 0, proofErrorCompleteCustomers: new Set(), proofErrorCompleteCount: 0
+            proofErrorDist: 0, proofErrorComplete: 0, proofErrorCompleteCustomers: new Set(), proofErrorCompleteCount: 0,
+            postProcessingCount: 0
           };
         });
 
@@ -1090,6 +1103,10 @@
             if (entry._category === 'noCheck') acc.noCheckCompleteCount++;
             else acc.proofErrorCompleteCount++;
 
+            // 후처리관리중 집계 (유선안내완료 체크된 건 중에서)
+            const isPostProcessing = ph.length > 0 ? isPostProcessingForKey(ph) : false;
+            if (isPostProcessing) acc.postProcessingCount++;
+
             // 고객(연락처) 기준 집계
             const item = allItemsForStats.find(it => `${it._prefix}_${it._dateKey}_${it.id}` === key);
             if (item && item.contact) {
@@ -1118,6 +1135,7 @@
         html += '<th>총 분배</th><th>총 처리 고객수<br>(접수건수)</th>';
         html += '<th>미특정 분배건</th><th>미특정 처리 고객수<br>(접수건수)</th>';
         html += '<th>증빙오류 접수건</th><th>증빙오류 처리 고객수<br>(접수건수)</th>';
+        html += '<th>후처리관리중</th>';
         html += '</tr></thead><tbody>';
 
         Object.values(accountStats).forEach(stat => {
@@ -1129,6 +1147,7 @@
           html += '<td class="number">' + stat.noCheckComplete + ' <span style="color:#666; font-size:11px;">(' + stat.noCheckCompleteCount + ')</span></td>';
           html += '<td class="number">' + stat.proofErrorDist + '</td>';
           html += '<td class="number">' + stat.proofErrorComplete + ' <span style="color:#666; font-size:11px;">(' + stat.proofErrorCompleteCount + ')</span></td>';
+          html += '<td class="number" style="color:#ff6b00; font-weight:600;">' + stat.postProcessingCount + '</td>';
           html += '</tr>';
         });
         html += '</tbody></table>';

@@ -297,6 +297,7 @@
             <option value="noCallComplete">유선안내 미완료 (해야 할 일)</option>
             <option value="callComplete">내가 처리한 건</option>
             <option value="finalUnreached">최종미연결</option>
+            <option value="postProcessing">후처리관리중</option>
             <option value="all">전체 (배정된 건)</option>
             <option value="proofError">증빙오류(반려)</option>
             <option value="noRefundExchange">환불·교환 모두 미체크 (접수시)</option>
@@ -530,6 +531,18 @@
         if (h.changes && typeof h.changes === 'string') {
           if (h.changes.includes('최종미연결: 체크')) return true;
           if (h.changes.includes('최종미연결: 해제')) return false;
+        }
+      }
+      return false;
+    }
+    // 후처리관리중 여부: processing history에서 최신 변경 기준
+    function isPostProcessingForKey(processingHistory) {
+      if (!Array.isArray(processingHistory) || processingHistory.length === 0) return false;
+      const sorted = [...processingHistory].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      for (const h of sorted) {
+        if (h.changes && typeof h.changes === 'string') {
+          if (h.changes.includes('후처리관리중: 체크')) return true;
+          if (h.changes.includes('후처리관리중: 해제')) return false;
         }
       }
       return false;
@@ -858,6 +871,14 @@
             const unreached = ph.length > 0 ? isFinalUnreachedForKey(ph) : (!!d.finalUnreached);
             return unreached;
           });
+        } else if (viewFilter === 'postProcessing') {
+          base = base.filter((d) => {
+            const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
+            const ph = processingHistoryMap.get(key) || [];
+            // processing_history에서 최신 변경 기준으로 확인
+            const postProcessing = ph.length > 0 ? isPostProcessingForKey(ph) : (!!d.postProcessing);
+            return postProcessing;
+          });
         }
       }
       if (!searchFilters.name && !searchFilters.contact && !searchFilters.customsCode && !searchFilters.uniqueCode) return base;
@@ -1054,7 +1075,7 @@
       listEl.innerHTML = tableHtml + paginationHtml;
       const infoP = document.createElement('p');
       infoP.className = 'msg info';
-      const filterLabels = { all: '', proofError: '증빙오류(반려)', noRefundExchange: '환불·교환 미체크', callComplete: '내가 처리한 건', noCallComplete: '유선안내 미완료', finalUnreached: '최종미연결' };
+      const filterLabels = { all: '', proofError: '증빙오류(반려)', noRefundExchange: '환불·교환 미체크', callComplete: '내가 처리한 건', noCallComplete: '유선안내 미완료', finalUnreached: '최종미연결', postProcessing: '후처리관리중' };
       const filterLabel = filterLabels[viewFilter] || '';
       const baseMsg = (searchFilters.name || searchFilters.contact || searchFilters.customsCode || searchFilters.uniqueCode) ? ('검색 결과 ' + total + '건 (전체 ' + allItems.length + '건 중)') : (filterLabel ? '[' + filterLabel + '] ' + total + '건' : '전체 ' + total + '건');
       infoP.textContent = baseMsg + ', 페이지당 30건. 상세에서 고객정보·제품·체크박스·상담이력·처리내역 확인·수정.';
@@ -1273,13 +1294,16 @@
       const dmLockedAttr = dmLocked ? ' disabled title="처리 완료 건 — 수정 불가"' : '';
 
       const processingHistory = await loadProcessingHistory(d.id, d._dateKey || '', d._prefix || '');
-      // 유선안내완료·최종미연결: processing history 기준 (목업 시 새로고침 후에도 유지)
+      // 유선안내완료·최종미연결·후처리관리중: processing history 기준 (목업 시 새로고침 후에도 유지)
       const effectiveCallComplete = processingHistory.length > 0 ? isCallCompleteForKey(processingHistory) : (!!d.callComplete);
       const effectiveFinalUnreached = processingHistory.length > 0 ? isFinalUnreachedForKey(processingHistory) : (!!d.finalUnreached);
+      const effectivePostProcessing = processingHistory.length > 0 ? isPostProcessingForKey(processingHistory) : (!!d.postProcessing);
       const callC = effectiveCallComplete ? ' checked' : '';
       const finalUC = effectiveFinalUnreached ? ' checked' : '';
+      const postPC = effectivePostProcessing ? ' checked' : '';
       d._effectiveCallComplete = effectiveCallComplete;
       d._effectiveFinalUnreached = effectiveFinalUnreached;
+      d._effectivePostProcessing = effectivePostProcessing;
       const counselingHistory = await loadCounselingHistory(d.id, d._dateKey || '', d._prefix || '');
 
       let statusReadonly = [];
@@ -1318,6 +1342,7 @@
         '<label><input type="checkbox" id="dm-cb-invalid" data-field="invalidInfo"' + iC + dmLockedAttr + '> 잘못된정보</label>' +
         '<label><input type="checkbox" id="dm-cb-callComplete" data-field="callComplete"' + callC + '> 유선안내완료</label>' +
         '<label><input type="checkbox" id="dm-cb-finalUnreached" data-field="finalUnreached"' + finalUC + '> 최종미연결</label>' +
+        '<label><input type="checkbox" id="dm-cb-postProcessing" data-field="postProcessing"' + postPC + '> 후처리관리중</label>' +
         '</div>' +
         '<button type="button" id="dm-apply-flags-btn" class="btn btn-primary" style="margin-top:12px;">적용</button>' +
         statusReadonlyHtml +
@@ -1532,6 +1557,7 @@
       const cbInvalid = document.getElementById('dm-cb-invalid');
       const cbCallComplete = document.getElementById('dm-cb-callComplete');
       const cbFinalUnreached = document.getElementById('dm-cb-finalUnreached');
+      const cbPostProcessing = document.getElementById('dm-cb-postProcessing');
       const saveHistoryBtn = document.getElementById('dm-save-history-btn');
       
       const saveFromModal = async () => {
@@ -1540,6 +1566,7 @@
         const invalidInfo = !!cbInvalid?.checked;
         const callComplete = !!cbCallComplete?.checked;
         const finalUnreached = !!cbFinalUnreached?.checked;
+        const postProcessing = !!cbPostProcessing?.checked;
         
         const d = currentDetailData;
         if (!d || !db) return;
@@ -1555,16 +1582,18 @@
           exchangeDone: d.exchangeDone || false,
           invalidInfo: d.invalidInfo || false,
           callComplete: (d._effectiveCallComplete !== undefined ? d._effectiveCallComplete : d.callComplete) || false,
-          finalUnreached: (d._effectiveFinalUnreached !== undefined ? d._effectiveFinalUnreached : d.finalUnreached) || false
+          finalUnreached: (d._effectiveFinalUnreached !== undefined ? d._effectiveFinalUnreached : d.finalUnreached) || false,
+          postProcessing: (d._effectivePostProcessing !== undefined ? d._effectivePostProcessing : d.postProcessing) || false
         };
         
-        const newValues = { refundDone, exchangeDone, invalidInfo, callComplete, finalUnreached };
+        const newValues = { refundDone, exchangeDone, invalidInfo, callComplete, finalUnreached, postProcessing };
         const changes = [];
         if (oldValues.refundDone !== newValues.refundDone) changes.push('환불: ' + (newValues.refundDone ? '체크' : '해제'));
         if (oldValues.exchangeDone !== newValues.exchangeDone) changes.push('교환: ' + (newValues.exchangeDone ? '체크' : '해제'));
         if (oldValues.invalidInfo !== newValues.invalidInfo) changes.push('잘못된정보: ' + (newValues.invalidInfo ? '체크' : '해제'));
         if (oldValues.callComplete !== newValues.callComplete) changes.push('유선안내완료: ' + (newValues.callComplete ? '체크' : '해제'));
         if (oldValues.finalUnreached !== newValues.finalUnreached) changes.push('최종미연결: ' + (newValues.finalUnreached ? '체크' : '해제'));
+        if (oldValues.postProcessing !== newValues.postProcessing) changes.push('후처리관리중: ' + (newValues.postProcessing ? '체크' : '해제'));
         
         const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
         const metaPath = dateKey ? (prefix + '/submissions_meta/' + dateKey + '/' + id) : '';
@@ -1592,6 +1621,7 @@
             it.sixCansOrMore = newValues.sixCansOrMore;
             it.callComplete = newValues.callComplete;
             it.finalUnreached = newValues.finalUnreached;
+            it.postProcessing = newValues.postProcessing;
           }
           
           await loadProcessingHistoryFromFirebase();
