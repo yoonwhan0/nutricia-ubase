@@ -268,10 +268,12 @@
         <strong>① 환불/교환 미체크</strong> — 아래 조건을 <u>모두</u> 만족하는 건만 분배 대상입니다.<br>
         · 환불 미체크 AND 교환 미체크<br>
         · 증빙오류 아님<br>
-        · 잘못된정보 미체크 (잘못된정보 = 유선안내 완료·재접수 예정이므로 제외)<br>
+        · 잘못된정보 미체크 (잘못된정보 체크 시 유선안내 완료 후 재접수 예정이므로 분배 제외)<br>
+        · 유선안내완료 아님 (이미 유선안내완료 처리된 건은 분배 대상에서 제외, 재분배 시에도 동일하게 적용)<br>
         · 아직 분배되지 않은 건<br><br>
-        <strong>② 증빙오류(반려)</strong> — 아래 조건을 만족하는 건만 분배 대상입니다.<br>
+        <strong>② 증빙오류(반려)</strong> — 아래 조건을 <u>모두</u> 만족하는 건만 분배 대상입니다.<br>
         · 증빙오류(반려) 체크된 건<br>
+        · 유선안내완료 아님 (이미 유선안내완료 처리된 건은 분배 대상에서 제외, 재분배 시에도 동일하게 적용)<br>
         · 아직 분배되지 않은 건
       </p>
     </div>
@@ -287,7 +289,7 @@
     <div class="dashboard-section">
       <div class="dashboard-card" style="border-left: 4px solid #17a;">
         <h3 class="card-group-title">환불/교환 미체크 — 조회 및 분배</h3>
-        <p class="hint">환불·교환 체크가 안 된 접수건을 조회하고 상담사에게 분배합니다. (잘못된정보 체크된 건은 유선안내 완료·재접수 예정이므로 분배 제외)</p>
+        <p class="hint">환불·교환 체크가 안 된 접수건을 조회하고 상담사에게 분배합니다. (잘못된정보 체크된 건 및 유선안내완료 처리된 건은 분배 대상에서 제외됩니다)</p>
         <div class="toolbar">
           <button type="button" class="load-dist-btn" data-type="noCheck">전체 조회</button>
           <button type="button" class="auto-dist-btn" data-type="noCheck" style="background: #ffc107; color: #333;">자동 균등 분배</button>
@@ -302,7 +304,7 @@
     <div class="dashboard-section">
       <div class="dashboard-card" style="border-left: 4px solid #dc3545;">
         <h3 class="card-group-title">증빙오류(반려) — 조회 및 분배</h3>
-        <p class="hint">증빙오류로 반려된 접수건을 조회하고 상담사에게 분배합니다.</p>
+        <p class="hint">증빙오류로 반려된 접수건을 조회하고 상담사에게 분배합니다. (유선안내완료 처리된 건은 분배 대상에서 제외됩니다)</p>
         <div class="toolbar">
           <button type="button" class="load-dist-btn" data-type="proofError">전체 조회</button>
           <button type="button" class="auto-dist-btn" data-type="proofError" style="background: #ffc107; color: #333;">자동 균등 분배</button>
