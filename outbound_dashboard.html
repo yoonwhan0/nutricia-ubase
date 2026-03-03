@@ -1005,6 +1005,11 @@
           const history = distributionHistoryMap.get(key) || [];
           const isAssigned = Array.isArray(history) && history.length > 0;
           
+          // 유선안내완료 체크: 이미 처리된 건은 분배 대상에서 제외
+          const ph = processingHistoryMap.get(key) || [];
+          const isCallComplete = ph.length > 0 ? isCallCompleteForKey(ph) : (!!item.callComplete);
+          if (isCallComplete) return false; // 유선안내완료된 건은 분배 제외
+          
           // 필터 타입에 따라 필터링
           if (filterType === 'noCheck') {
             // 환불/교환 체크 안 된 건만 (증빙오류 아님, 잘못된정보 아님)
@@ -1183,12 +1188,18 @@
       }
 
       distributionHistoryMap = await loadDistributionHistoryFromFirebase();
+      await loadProcessingAndCounselingFromFirebase(); // 유선안내완료 체크를 위해 필요
 
       // 드롭다운 필터에 따라 미분배 접수건 필터링
       const unassigned = allSubmissions.filter(item => {
         const key = `${item._prefix}_${item._dateKey}_${item.id}`;
         const history = distributionHistoryMap.get(key) || [];
         const isAssigned = Array.isArray(history) && history.length > 0;
+        
+        // 유선안내완료 체크: 이미 처리된 건은 분배 대상에서 제외
+        const ph = processingHistoryMap.get(key) || [];
+        const isCallComplete = ph.length > 0 ? isCallCompleteForKey(ph) : (!!item.callComplete);
+        if (isCallComplete) return false; // 유선안내완료된 건은 분배 제외
         
         // 필터 타입에 따라 필터링
         if (filterType === 'noCheck') {
