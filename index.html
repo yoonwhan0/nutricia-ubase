@@ -1426,10 +1426,6 @@
       // 환불/교환 체크박스는 disabled이므로 이벤트 리스너 추가하지 않음
       if (cbInvalid) {
         cbInvalid.addEventListener('change', () => {
-          const field = cbInvalid.getAttribute('data-field');
-          if (cbInvalid.checked && field === 'invalidInfo') {
-            if (!confirm('이 고객\n\n잘못된 정보 체크가 맞습니까?\n\n확인 시 저장됩니다.')) { cbInvalid.checked = false; return; }
-          }
           enforceDetailModalSingleFlag();
           saveFromModal();
         });
@@ -1739,20 +1735,6 @@
         // 환불/교환 체크박스는 disabled이므로 이벤트 리스너 추가하지 않음
         row.querySelectorAll('.list-cb-invalid, .list-cb-sixCans').forEach((cb) => {
           cb.addEventListener('change', () => {
-            const field = cb.getAttribute('data-field');
-            if (field === 'sixCansOrMore') {
-              saveFlagsOnly(row);
-              return;
-            }
-            if (cb.checked) {
-              const label = field === 'invalidInfo' ? '잘못된 정보' : '';
-              const info = getRowCustomerInfo(row);
-              cb.checked = false;
-              if (!confirm(info + '\n\n' + label + ' 체크가 맞습니까?\n\n확인 시 체크 후 저장됩니다.')) return;
-              row.querySelector('.list-cb-invalid').checked = (cb === row.querySelector('.list-cb-invalid'));
-              saveFlagsOnly(row);
-              return;
-            }
             saveFlagsOnly(row);
           });
         });
