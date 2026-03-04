@@ -881,65 +881,76 @@
       return false;
     }
 
-    // 환불→교환 전환 여부 확인 (처음 환불만 체크 → 나중에 교환 체크)
-    function isRefundToExchangeConversion(processingHistory, currentItem) {
+    // 환불/교환 최종 상태 및 전환 건수 계산 (고객별 중복 제거, 마지막 상태 기준)
+    // 반환: { finalRefund: boolean, finalExchange: boolean, refundToExchange: number, exchangeToRefund: number }
+    function getRefundExchangeStats(processingHistory, currentItem) {
+      let finalRefund = false;
+      let finalExchange = false;
+      let refundToExchange = 0; // 환불→교환 전환 건수
+      let exchangeToRefund = 0; // 교환→환불 전환 건수
+      
+      // 현재 상태 확인
+      if (currentItem) {
+        finalRefund = !!currentItem.refundDone;
+        finalExchange = !!currentItem.exchangeDone;
+      }
+      
       if (!Array.isArray(processingHistory) || processingHistory.length === 0) {
-        // processing_history가 없으면 현재 상태로 판단
-        // 환불만 체크되어 있고 교환은 체크 안 된 경우는 전환 아님 (원래 환불 요청)
-        // 환불과 교환 둘 다 체크된 경우는 전환으로 간주할 수 있지만, 이력이 없으면 확실하지 않음
-        return false;
+        // 이력이 없으면 현재 상태만 반환
+        return { finalRefund, finalExchange, refundToExchange: 0, exchangeToRefund: 0 };
       }
       
       // 시간순으로 정렬 (오래된 것부터)
       const sorted = [...processingHistory].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
       
-      let hadRefundOnly = false; // 처음에 환불만 체크되어 있었는지
-      let hasExchange = false; // 나중에 교환이 체크되었는지
+      let prevRefund = false;
+      let prevExchange = false;
       
-      // 시간순으로 확인
+      // 시간순으로 변경 이력 추적
       for (const h of sorted) {
         if (h.changes && typeof h.changes === 'string') {
           const changes = h.changes;
+          let currentRefund = prevRefund;
+          let currentExchange = prevExchange;
           
-          // 환불 체크 확인
+          // 환불 체크/해제 확인
           if (changes.includes('환불: 체크')) {
-            // 이 시점에서 교환이 체크되어 있지 않았다면 환불만 체크된 상태
-            if (!hasExchange) {
-              hadRefundOnly = true;
-            }
-          }
-          if (changes.includes('환불: 해제')) {
-            hadRefundOnly = false;
+            currentRefund = true;
+          } else if (changes.includes('환불: 해제')) {
+            currentRefund = false;
           }
           
-          // 교환 체크 확인
+          // 교환 체크/해제 확인
           if (changes.includes('교환: 체크')) {
-            hasExchange = true;
+            currentExchange = true;
+          } else if (changes.includes('교환: 해제')) {
+            currentExchange = false;
           }
-          if (changes.includes('교환: 해제')) {
-            hasExchange = false;
+          
+          // 전환 감지
+          // 환불→교환: 이전에 환불만 체크되어 있었고, 현재 교환이 체크됨
+          if (prevRefund && !prevExchange && currentExchange) {
+            refundToExchange++;
           }
+          
+          // 교환→환불: 이전에 교환만 체크되어 있었고, 현재 환불이 체크됨
+          if (prevExchange && !prevRefund && currentRefund) {
+            exchangeToRefund++;
+          }
+          
+          prevRefund = currentRefund;
+          prevExchange = currentExchange;
         }
       }
       
-      // 현재 상태도 확인 (이력이 있지만 최신 상태 반영)
-      if (currentItem) {
-        const currentHasRefund = !!currentItem.refundDone;
-        const currentHasExchange = !!currentItem.exchangeDone;
-        
-        // 현재 환불만 체크되어 있으면 전환 아님
-        if (currentHasRefund && !currentHasExchange) {
-          return false;
-        }
-        
-        // 현재 교환이 체크되어 있고, 이전에 환불만 있었던 경우 전환으로 간주
-        if (currentHasExchange && hadRefundOnly) {
-          return true;
-        }
-      }
-      
-      // 이력만으로 판단: 환불만 있었고 나중에 교환이 체크된 경우
-      return hadRefundOnly && hasExchange;
+      // 최종 상태는 현재 상태로 (이력의 마지막이 아닌 현재 DB 상태)
+      return { finalRefund, finalExchange, refundToExchange, exchangeToRefund };
+    }
+    
+    // 환불→교환 전환 여부 확인 (기존 호환성 유지)
+    function isRefundToExchangeConversion(processingHistory, currentItem) {
+      const stats = getRefundExchangeStats(processingHistory, currentItem);
+      return stats.refundToExchange > 0;
     }
     function showAdminUI(user) {
       if (adminUserEmailEl) adminUserEmailEl.textContent = user.email || '';
