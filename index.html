@@ -1372,13 +1372,9 @@
     async function saveFlagsOnlyByData(payload) {
       const d = currentDetailData;
       if (!d || !db) return;
-      const locked = !!(d.refundComplete || d.exchangeComplete);
-      // 환불/교환은 항상 기존 값 유지 (마스터 페이지에서만 수정 가능)
+      // 환불/교환은 항상 기존 값 유지 (마스터 페이지에서만 수정 가능). 잘못된정보·6캔이상은 항상 payload 값으로 저장
       payload.refundDone = !!d.refundDone;
       payload.exchangeDone = !!d.exchangeDone;
-      if (locked) {
-        payload.invalidInfo = !!d.invalidInfo;
-      }
       const id = d.id;
       const dateKey = (d._dateKey || '').trim();
       const isLegacy = !!d._isLegacy;
@@ -1399,7 +1395,7 @@
         }
         const tbody = listEl.querySelector('tbody');
         if (tbody) tbody.querySelectorAll('tr').forEach((r) => {
-          if (r.getAttribute('data-id') !== id || r.getAttribute('data-prefix') !== prefix) return;
+          if (r.getAttribute('data-id') !== id || r.getAttribute('data-date-key') !== dateKey || r.getAttribute('data-prefix') !== prefix) return;
           const row = r;
           const set = (sel, val) => { const c = row.querySelector(sel); if (c) c.checked = !!val; };
           set('.list-cb-refund', payload.refundDone);
@@ -1710,16 +1706,12 @@
         return;
       }
       const item = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
-      const locked = !!(item && (item.refundComplete || item.exchangeComplete));
       enforceSingleFlag(row);
       // 환불/교환은 항상 기존 값 유지 (마스터 페이지에서만 수정 가능)
       let refundDone = item ? !!item.refundDone : false;
       let exchangeDone = item ? !!item.exchangeDone : false;
-      let invalidInfo = !!row.querySelector('.list-cb-invalid')?.checked;
+      const invalidInfo = !!row.querySelector('.list-cb-invalid')?.checked;
       const sixCansOrMore = !!row.querySelector('.list-cb-sixCans')?.checked;
-      if (locked && item) {
-        invalidInfo = !!item.invalidInfo;
-      }
       const payload = { refundDone, exchangeDone, invalidInfo, sixCansOrMore };
       const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
       const metaPath = prefix + '/submissions_meta/' + dateKey + '/' + id;
