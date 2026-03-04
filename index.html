@@ -1702,12 +1702,13 @@
         return;
       }
       const item = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
+      // 잘못된정보·6캔이상은 enforceSingleFlag 호출 전에 읽어야 함 (환불/교환 체크 시 enforceSingleFlag가 invalid 체크를 해제함)
+      const invalidInfo = !!row.querySelector('.list-cb-invalid')?.checked;
+      const sixCansOrMore = !!row.querySelector('.list-cb-sixCans')?.checked;
       enforceSingleFlag(row);
       // 환불/교환은 항상 기존 값 유지 (마스터 페이지에서만 수정 가능)
       let refundDone = item ? !!item.refundDone : false;
       let exchangeDone = item ? !!item.exchangeDone : false;
-      const invalidInfo = !!row.querySelector('.list-cb-invalid')?.checked;
-      const sixCansOrMore = !!row.querySelector('.list-cb-sixCans')?.checked;
       const payload = { refundDone, exchangeDone, invalidInfo, sixCansOrMore };
       const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
       const metaPath = prefix + '/submissions_meta/' + dateKey + '/' + id;
