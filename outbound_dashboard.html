@@ -258,6 +258,7 @@
     <div class="dashboard-tabs">
       <button type="button" class="dashboard-tab active" data-tab="distribution">물량 분배</button>
       <button type="button" class="dashboard-tab" data-tab="stats">통계·이력</button>
+      <button type="button" class="dashboard-tab" data-tab="agent-detail">상담원 상세 관리</button>
     </div>
 
     <!-- 탭1: 물량 분배 (유형별 분리) -->
@@ -402,6 +403,40 @@
         </div>
         <div id="statsLoading" class="loading" style="display: none;">조회 중…</div>
         <div id="statsResult"></div>
+      </div>
+    </div>
+    </div>
+
+    <!-- 탭3: 상담원 상세 관리 -->
+    <div id="tab-agent-detail" class="dashboard-tab-content">
+    <div class="dashboard-section">
+      <div class="dashboard-card">
+        <h3 class="card-group-title">상담원별 배정 데이터 조회</h3>
+        <p class="hint">상담원을 선택하고 상태를 선택하면 해당 상담원이 배정된 데이터를 필터링하여 조회합니다.</p>
+        <div class="toolbar">
+          <label>상담원:</label>
+          <select id="agentDetailAccountSelect">
+            <option value="">선택하세요</option>
+            <option value="cs1@ubase.co.kr">cs1</option>
+            <option value="cs2@ubase.co.kr">cs2</option>
+            <option value="cs3@ubase.co.kr">cs3</option>
+            <option value="cs4@ubase.co.kr">cs4</option>
+            <option value="cs5@ubase.co.kr">cs5</option>
+            <option value="cs6@ubase.co.kr">cs6</option>
+            <option value="cs7@ubase.co.kr">cs7</option>
+            <option value="cs8@ubase.co.kr">cs8</option>
+            <option value="cs9@ubase.co.kr">cs9</option>
+            <option value="cs10@ubase.co.kr">cs10</option>
+          </select>
+          <label style="margin-left: 12px;">상태:</label>
+          <button type="button" class="agent-filter-btn" data-filter="callComplete" style="background: #28a745; color: #fff;">유선안내완료</button>
+          <button type="button" class="agent-filter-btn" data-filter="finalUnreached" style="background: #dc3545; color: #fff;">최종미연결</button>
+          <button type="button" class="agent-filter-btn" data-filter="postProcessing" style="background: #ffc107; color: #333;">후처리관리중</button>
+          <button type="button" class="agent-filter-btn" data-filter="all" style="background: #17a; color: #fff;">전체</button>
+          <button type="button" id="loadAgentDetailBtn" style="background: #17a; color: #fff;">조회</button>
+        </div>
+        <div id="agentDetailLoading" class="loading" style="display: none;">조회 중…</div>
+        <div id="agentDetailResult"></div>
       </div>
     </div>
     </div>
@@ -833,6 +868,18 @@
       }
       return false;
     }
+    // 최종미연결 여부: processing history에서 최신 변경 기준
+    function isFinalUnreachedForKey(processingHistory) {
+      if (!Array.isArray(processingHistory) || processingHistory.length === 0) return false;
+      const sorted = [...processingHistory].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      for (const h of sorted) {
+        if (h.changes && typeof h.changes === 'string') {
+          if (h.changes.includes('최종미연결: 체크')) return true;
+          if (h.changes.includes('최종미연결: 해제')) return false;
+        }
+      }
+      return false;
+    }
 
     // 환불→교환 전환 여부 확인 (처음 환불만 체크 → 나중에 교환 체크)
     function isRefundToExchangeConversion(processingHistory, currentItem) {
@@ -1067,7 +1114,8 @@
             totalDist: 0, totalComplete: 0, totalCompleteCustomers: new Set(), totalCompleteCount: 0,
             noCheckDist: 0, noCheckComplete: 0, noCheckCompleteCustomers: new Set(), noCheckCompleteCount: 0,
             proofErrorDist: 0, proofErrorComplete: 0, proofErrorCompleteCustomers: new Set(), proofErrorCompleteCount: 0,
-            postProcessingCount: 0
+            postProcessingCount: 0,
+            finalUnreachedCount: 0
           };
         });
 
@@ -1106,6 +1154,10 @@
             // 후처리관리중 집계 (유선안내완료 체크된 건 중에서)
             const isPostProcessing = ph.length > 0 ? isPostProcessingForKey(ph) : false;
             if (isPostProcessing) acc.postProcessingCount++;
+            
+            // 최종미연결 집계 (유선안내완료 체크된 건 중에서)
+            const isFinalUnreached = ph.length > 0 ? isFinalUnreachedForKey(ph) : false;
+            if (isFinalUnreached) acc.finalUnreachedCount++;
 
             // 고객(연락처) 기준 집계
             const item = allItemsForStats.find(it => `${it._prefix}_${it._dateKey}_${it.id}` === key);
@@ -1136,6 +1188,7 @@
         html += '<th>미특정 분배건</th><th>미특정 처리 고객수<br>(접수건수)</th>';
         html += '<th>증빙오류 접수건</th><th>증빙오류 처리 고객수<br>(접수건수)</th>';
         html += '<th>후처리관리중</th>';
+        html += '<th>최종미연결</th>';
         html += '</tr></thead><tbody>';
 
         Object.values(accountStats).forEach(stat => {
@@ -1148,6 +1201,7 @@
           html += '<td class="number">' + stat.proofErrorDist + '</td>';
           html += '<td class="number">' + stat.proofErrorComplete + ' <span style="color:#666; font-size:11px;">(' + stat.proofErrorCompleteCount + ')</span></td>';
           html += '<td class="number" style="color:#ff6b00; font-weight:600;">' + stat.postProcessingCount + '</td>';
+          html += '<td class="number" style="color:#dc3545; font-weight:600;">' + stat.finalUnreachedCount + '</td>';
           html += '</tr>';
         });
         html += '</tbody></table>';
@@ -2304,6 +2358,148 @@
         if (target) target.classList.add('active');
       });
     });
+
+    // 상담원 상세 관리: 필터 버튼 클릭
+    let selectedAgentFilter = 'all';
+    document.querySelectorAll('.agent-filter-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.agent-filter-btn').forEach((b) => {
+          b.style.opacity = '0.6';
+          b.style.fontWeight = 'normal';
+        });
+        btn.style.opacity = '1';
+        btn.style.fontWeight = 'bold';
+        selectedAgentFilter = btn.getAttribute('data-filter');
+      });
+    });
+
+    // 상담원 상세 관리: 조회 버튼
+    const agentDetailAccountSelect = document.getElementById('agentDetailAccountSelect');
+    const loadAgentDetailBtn = document.getElementById('loadAgentDetailBtn');
+    const agentDetailLoading = document.getElementById('agentDetailLoading');
+    const agentDetailResult = document.getElementById('agentDetailResult');
+    
+    if (loadAgentDetailBtn) {
+      loadAgentDetailBtn.addEventListener('click', async () => {
+        const account = agentDetailAccountSelect ? agentDetailAccountSelect.value : '';
+        if (!account) {
+          alert('상담원을 선택해주세요.');
+          return;
+        }
+        await loadAgentDetail(account, selectedAgentFilter);
+      });
+    }
+
+    // 상담원 상세 관리: 데이터 조회
+    async function loadAgentDetail(account, filter) {
+      if (!db) {
+        agentDetailResult.innerHTML = '<div class="msg error">Firebase가 초기화되지 않았습니다.</div>';
+        return;
+      }
+
+      agentDetailLoading.style.display = 'block';
+      agentDetailResult.innerHTML = '';
+
+      try {
+        await loadProcessingAndCounselingFromFirebase();
+        const latestDistributionMap = new Map();
+        
+        // 분배 이력에서 해당 상담원이 배정된 건만 찾기
+        distributionHistoryMap.forEach((history, key) => {
+          if (Array.isArray(history) && history.length > 0) {
+            const latest = history[history.length - 1];
+            if (latest.account && latest.account.toLowerCase() === account.toLowerCase()) {
+              latestDistributionMap.set(key, latest);
+            }
+          }
+        });
+
+        // 전체 접수건 로드
+        const allItems = [];
+        for (const prefix of PREFIXES) {
+          const snap = await get(dbRef(db, prefix + '/submissions_meta'));
+          if (snap.exists()) {
+            snap.forEach((dateSnap) => {
+              const dateKey = dateSnap.key;
+              if (!/^\d{8}$/.test(dateKey)) return;
+              dateSnap.forEach((inner) => {
+                const item = inner.val();
+                allItems.push({
+                  ...item,
+                  _prefix: prefix,
+                  id: inner.key,
+                  _dateKey: dateKey
+                });
+              });
+            });
+          }
+        }
+
+        // 필터링: 해당 상담원이 배정된 건만
+        const filteredItems = [];
+        latestDistributionMap.forEach((entry, key) => {
+          const item = allItems.find(it => `${it._prefix}_${it._dateKey}_${it.id}` === key);
+          if (!item) return;
+
+          const ph = processingHistoryMap.get(key) || [];
+          const isCallComplete = ph.length > 0 ? isCallCompleteForKey(ph) : (!!item.callComplete);
+          const isFinalUnreached = ph.length > 0 ? isFinalUnreachedForKey(ph) : false;
+          const isPostProcessing = ph.length > 0 ? isPostProcessingForKey(ph) : false;
+
+          // 필터 적용
+          if (filter === 'callComplete' && !isCallComplete) return;
+          if (filter === 'finalUnreached' && !isFinalUnreached) return;
+          if (filter === 'postProcessing' && !isPostProcessing) return;
+          if (filter === 'all' || filter === '') {
+            // 전체는 모든 배정된 건 표시
+          }
+
+          filteredItems.push({
+            ...item,
+            _key: key,
+            _isCallComplete: isCallComplete,
+            _isFinalUnreached: isFinalUnreached,
+            _isPostProcessing: isPostProcessing
+          });
+        });
+
+        // 결과 표시
+        if (filteredItems.length === 0) {
+          agentDetailResult.innerHTML = '<div class="msg info">조회된 데이터가 없습니다.</div>';
+          agentDetailLoading.style.display = 'none';
+          return;
+        }
+
+        const filterLabel = filter === 'all' ? '전체' : (filter === 'callComplete' ? '유선안내완료' : (filter === 'finalUnreached' ? '최종미연결' : '후처리관리중'));
+        let html = '<table class="stats-table" style="margin-top: 12px;">';
+        html += '<caption style="caption-side:top;text-align:left;font-weight:600;margin-bottom:8px;">' + account.replace('@ubase.co.kr', '') + ' 배정 데이터 (' + filterLabel + ') - 총 ' + filteredItems.length + '건</caption>';
+        html += '<thead><tr>';
+        html += '<th>접수ID</th><th>이름</th><th>연락처</th><th>접수일</th>';
+        html += '<th>유선안내완료</th><th>최종미연결</th><th>후처리관리중</th>';
+        html += '</tr></thead><tbody>';
+
+        filteredItems.forEach(item => {
+          const y = item._dateKey.substring(0, 4), m = item._dateKey.substring(4, 6), d = item._dateKey.substring(6, 8);
+          const dateStr = y + '-' + m + '-' + d;
+          html += '<tr>';
+          html += '<td>' + escapeHtml(item.id || '-') + '</td>';
+          html += '<td>' + escapeHtml(item.name || '-') + '</td>';
+          html += '<td>' + escapeHtml(item.contact || '-') + '</td>';
+          html += '<td>' + dateStr + '</td>';
+          html += '<td class="cell-flag">' + (item._isCallComplete ? 'Y' : '-') + '</td>';
+          html += '<td class="cell-flag">' + (item._isFinalUnreached ? 'Y' : '-') + '</td>';
+          html += '<td class="cell-flag">' + (item._isPostProcessing ? 'Y' : '-') + '</td>';
+          html += '</tr>';
+        });
+
+        html += '</tbody></table>';
+        agentDetailResult.innerHTML = html;
+      } catch (err) {
+        agentDetailResult.innerHTML = '<div class="msg error">조회 실패: ' + escapeHtml(err.message || err) + '</div>';
+      } finally {
+        agentDetailLoading.style.display = 'none';
+      }
+    }
 
     // 통계 탭: 보기 모드에 따라 loadStats 또는 loadHistory 호출
     if (loadStatsBtn) {
