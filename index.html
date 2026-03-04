@@ -1185,6 +1185,39 @@
     function openDetailModal(d) {
       if (!d || !db) return;
       currentDetailData = d;
+      
+      // submissions_meta에서 AI 검토 데이터 병합
+      const prefix = d._prefix || '';
+      const dateKey = d._dateKey || '';
+      if (prefix && dateKey && metaSnaps[prefix] && metaSnaps[prefix].exists()) {
+        const metaSnap = metaSnaps[prefix];
+        let foundMeta = null;
+        // dateKey로 찾기
+        metaSnap.forEach((dateSnap) => {
+          if (dateSnap.key === dateKey) {
+            // id로 찾기
+            dateSnap.forEach((inner) => {
+              if (inner.key === d.id) {
+                foundMeta = inner.val();
+              }
+            });
+          }
+        });
+        if (foundMeta) {
+          if (foundMeta.orderNumber) d.orderNumber = foundMeta.orderNumber;
+          if (foundMeta.trackingNumber) d.trackingNumber = foundMeta.trackingNumber;
+          if (foundMeta.aiReviewedAt) d.aiReviewedAt = foundMeta.aiReviewedAt;
+          if (foundMeta.aiReviewOpinion) d.aiReviewOpinion = foundMeta.aiReviewOpinion;
+          if (foundMeta.aiUniqueCodeMatch) d.aiUniqueCodeMatch = foundMeta.aiUniqueCodeMatch;
+          // 2차 검증 데이터 병합
+          if (foundMeta.aiSecondReviewOrderNumber) d.aiSecondReviewOrderNumber = foundMeta.aiSecondReviewOrderNumber;
+          if (foundMeta.aiSecondReviewTrackingNumber) d.aiSecondReviewTrackingNumber = foundMeta.aiSecondReviewTrackingNumber;
+          if (foundMeta.aiSecondReviewUniqueCodeMatch) d.aiSecondReviewUniqueCodeMatch = foundMeta.aiSecondReviewUniqueCodeMatch;
+          if (foundMeta.aiSecondReviewOpinion) d.aiSecondReviewOpinion = foundMeta.aiSecondReviewOpinion;
+          if (foundMeta.aiSecondReviewedAt) d.aiSecondReviewedAt = foundMeta.aiSecondReviewedAt;
+        }
+      }
+      
       const modal = document.getElementById('detailModal');
       const titleEl = document.getElementById('detailModalTitle');
       const infoRowsEl = document.getElementById('detailModalInfoRows');
@@ -1201,10 +1234,28 @@
       infoHtml += '<div class="info-row"><strong>접수일시</strong> ' + formatDate(d.createdAt) + '</div>';
       infoHtml += '</div>';
       
-      // AI 검토 결과 표시
+      // 2차 검증 결과 표시 (최신 검토 결과를 위에)
+      if (d.aiSecondReviewedAt || d.aiSecondReviewOpinion || d.aiSecondReviewOrderNumber || d.aiSecondReviewTrackingNumber || d.aiSecondReviewUniqueCodeMatch) {
+        infoHtml += '<div class="info-section ai-review-block" style="background: #2d2d2d;">';
+        infoHtml += '<h2 style="color:#fff;margin-bottom:12px;">2차 AI 검토 결과</h2>';
+        infoHtml += '<div class="info-grid">';
+        infoHtml += '<div class="info-item" title="2차 검증에서 확인된 주문번호"><label>주문번호</label><span>' + escapeHtml(d.aiSecondReviewOrderNumber || '-') + '</span></div>';
+        infoHtml += '<div class="info-item" title="2차 검증에서 확인된 송장번호"><label>송장번호</label><span>' + escapeHtml(d.aiSecondReviewTrackingNumber || '-') + '</span></div>';
+        infoHtml += '<div class="info-item" title="2차 검증에서 확인된 제조·고유매칭"><label>제조·고유매칭</label><span>' + escapeHtml((d.aiSecondReviewUniqueCodeMatch === 'Y' || d.aiSecondReviewUniqueCodeMatch === 'N') ? d.aiSecondReviewUniqueCodeMatch : '정보부족') + '</span></div>';
+        infoHtml += '<div class="info-item"><label>2차 검증일시</label><span>' + escapeHtml(d.aiSecondReviewedAt ? d.aiSecondReviewedAt.replace('T', ' ').slice(0, 19) : '-') + '</span></div>';
+        infoHtml += '</div>';
+        if (d.aiSecondReviewOpinion) {
+          infoHtml += '<div class="info-item" style="margin-top:8px;"><label>2차 검증 의견</label><div class="ai-opinion-box">' + escapeHtml(d.aiSecondReviewOpinion) + '</div></div>';
+        } else {
+          infoHtml += '<div class="info-item" style="margin-top:8px;"><label>2차 검증 의견</label><span style="color:#888;">의견 없음</span></div>';
+        }
+        infoHtml += '</div>';
+      }
+      
+      // 1차 AI 검토 결과 표시 (이전 검토 결과를 아래에)
       if (d.aiReviewedAt || d.aiReviewOpinion || d.orderNumber || d.trackingNumber || d.aiUniqueCodeMatch) {
-        infoHtml += '<div class="info-section ai-review-block">';
-        infoHtml += '<h2 style="color:#fff;margin-bottom:12px;">AI 검토 결과</h2>';
+        infoHtml += '<div class="info-section ai-review-block" style="margin-top: 16px;">';
+        infoHtml += '<h2 style="color:#fff;margin-bottom:12px;">1차 AI 검토 결과</h2>';
         infoHtml += '<div class="info-grid">';
         
         // 해당몰 대상여부: 등록된 제품명+제조번호로 자체 계산

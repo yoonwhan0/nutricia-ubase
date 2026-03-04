@@ -296,6 +296,12 @@
           if (meta.aiReviewedAt) d.aiReviewedAt = meta.aiReviewedAt;
           if (meta.aiReviewOpinion) d.aiReviewOpinion = meta.aiReviewOpinion;
           if (meta.aiUniqueCodeMatch) d.aiUniqueCodeMatch = meta.aiUniqueCodeMatch;
+          // 2차 검증 데이터 병합
+          if (meta.aiSecondReviewOrderNumber) d.aiSecondReviewOrderNumber = meta.aiSecondReviewOrderNumber;
+          if (meta.aiSecondReviewTrackingNumber) d.aiSecondReviewTrackingNumber = meta.aiSecondReviewTrackingNumber;
+          if (meta.aiSecondReviewUniqueCodeMatch) d.aiSecondReviewUniqueCodeMatch = meta.aiSecondReviewUniqueCodeMatch;
+          if (meta.aiSecondReviewOpinion) d.aiSecondReviewOpinion = meta.aiSecondReviewOpinion;
+          if (meta.aiSecondReviewedAt) d.aiSecondReviewedAt = meta.aiSecondReviewedAt;
         }
         const p1List = getPhotoListFromData(d, 'photo1', 'photo1List');
         const p2List = getPhotoListFromData(d, 'photo2', 'photo2List');
@@ -343,13 +349,33 @@
           infoHtml += '</div></div>';
         }
 
-        // AI 검토 결과 표시
-        if (d.aiReviewedAt || d.aiReviewOpinion || d.orderNumber || d.trackingNumber || d.aiUniqueCodeMatch) {
+        // 주의사항 표시
+        if (d.aiReviewedAt || d.aiReviewOpinion || d.orderNumber || d.trackingNumber || d.aiUniqueCodeMatch || d.aiSecondReviewedAt || d.aiSecondReviewOpinion || d.aiSecondReviewOrderNumber || d.aiSecondReviewTrackingNumber || d.aiSecondReviewUniqueCodeMatch) {
           infoHtml += '<div class="detail-section" style="margin-bottom: 12px; padding: 12px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px;">';
           infoHtml += '<div style="font-size: 12px; color: #856404; line-height: 1.6;">';
           infoHtml += '<strong>⚠️ 주의사항:</strong> AI 검토 결과는 <strong>참고용으로만</strong> 사용해주세요. 사진상 빛번짐이나 음영이 낮을 경우 인식이 안되는 것이 정상이니 참고 바랍니다.';
           infoHtml += '</div></div>';
-          infoHtml += '<div class="detail-section ai-review-block"><h2 style="color:#fff;margin-bottom:12px;">AI 검토 결과</h2><div class="info-grid">';
+        }
+        
+        // 2차 검증 결과 표시 (최신 검토 결과를 위에)
+        if (d.aiSecondReviewedAt || d.aiSecondReviewOpinion || d.aiSecondReviewOrderNumber || d.aiSecondReviewTrackingNumber || d.aiSecondReviewUniqueCodeMatch) {
+          infoHtml += '<div class="detail-section ai-review-block" style="background: #2d2d2d;"><h2 style="color:#fff;margin-bottom:12px;">2차 AI 검토 결과</h2><div class="info-grid">';
+          infoHtml += '<div class="info-item" title="2차 검증에서 확인된 주문번호"><label>주문번호</label><span>' + escapeHtml(d.aiSecondReviewOrderNumber || '-') + '</span></div>';
+          infoHtml += '<div class="info-item" title="2차 검증에서 확인된 송장번호"><label>송장번호</label><span>' + escapeHtml(d.aiSecondReviewTrackingNumber || '-') + '</span></div>';
+          infoHtml += '<div class="info-item" title="2차 검증에서 확인된 제조·고유매칭"><label>제조·고유매칭</label><span>' + escapeHtml((d.aiSecondReviewUniqueCodeMatch === 'Y' || d.aiSecondReviewUniqueCodeMatch === 'N') ? d.aiSecondReviewUniqueCodeMatch : '정보부족') + '</span></div>';
+          infoHtml += '<div class="info-item"><label>2차 검증일시</label><span>' + escapeHtml(d.aiSecondReviewedAt ? d.aiSecondReviewedAt.replace('T', ' ').slice(0, 19) : '-') + '</span></div>';
+          infoHtml += '</div>';
+          if (d.aiSecondReviewOpinion) {
+            infoHtml += '<div class="info-item" style="margin-top:8px;"><label>2차 검증 의견</label><div class="ai-opinion-box">' + escapeHtml(d.aiSecondReviewOpinion) + '</div></div>';
+          } else {
+            infoHtml += '<div class="info-item" style="margin-top:8px;"><label>2차 검증 의견</label><span style="color:#888;">의견 없음</span></div>';
+          }
+          infoHtml += '</div>';
+        }
+        
+        // 1차 AI 검토 결과 표시 (이전 검토 결과를 아래에)
+        if (d.aiReviewedAt || d.aiReviewOpinion || d.orderNumber || d.trackingNumber || d.aiUniqueCodeMatch) {
+          infoHtml += '<div class="detail-section ai-review-block" style="margin-top: 16px;"><h2 style="color:#fff;margin-bottom:12px;">1차 AI 검토 결과</h2><div class="info-grid">';
           // 해당몰 대상여부: 등록된 제품명+제조번호로 자체 계산
           const u = getUniqueCodesArray(d);
           const targetProductValue = calculateTargetProduct(prefix, u);
