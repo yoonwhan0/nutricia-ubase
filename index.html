@@ -222,6 +222,13 @@
     .detail-modal-flags { margin-top: 20px; padding-top: 16px; border-top: 1px solid #eee; }
     .detail-modal-flags label { display: block; margin-bottom: 10px; font-size: 14px; cursor: pointer; }
     .detail-modal-flags input[type="checkbox"] { margin-right: 8px; }
+    .ai-review-block { background: #1a1a1a; color: #fff; padding: 14px; border-radius: 6px; margin-top: 16px; margin-bottom: 16px; }
+    .ai-review-block h2 { color: #fff; margin: 0 0 12px 0; font-size: 14px; }
+    .ai-review-block .info-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 16px; }
+    .ai-review-block .info-item { display: flex; flex-direction: column; }
+    .ai-review-block .info-item label { font-weight: 600; color: #b0b0b0; font-size: 12px; margin-bottom: 4px; }
+    .ai-review-block .info-item span { color: #fff; font-size: 14px; }
+    .ai-review-block .ai-opinion-box { margin-top: 8px; padding: 10px; background: rgba(255,255,255,0.08); border-radius: 4px; font-size: 13px; line-height: 1.6; white-space: pre-wrap; max-height: 200px; overflow-y: auto; color: #fff; }
 
     /* 사진 확대 라이트박스 */
     .photo-lightbox {
@@ -838,6 +845,128 @@
       });
     }
 
+    function getProductBatchNumbersForPrefix(prefix, productName) {
+      if (!productName) return [];
+      const name = productName.replace(/\s+/g, '');
+      
+      // 1사이트 (nutricia-x9fQ2kM7-1)
+      if (prefix === 'nutricia-x9fQ2kM7-1') {
+        if (name.includes('프로푸트라듀오어드밴스_PRE프레') || name.includes('프로푸트라듀오어드밴스PRE프레')) {
+          return ['17-12-2026', '15-03-2027', '22-04-2027', '01-06-2027', '22-07-2027', '07-09-2027', '15-09-2027'];
+        }
+        if (name.includes('프로푸트라듀오어드밴스_1단계') || name.includes('프로푸트라듀오어드밴스1단계')) {
+          return ['21-04-2027', '01-06-2027', '21-07-2027', '07-09-2027', '16-09-2027'];
+        }
+        if (name.includes('프로푸트라듀오어드밴스_2단계') || name.includes('프로푸트라듀오어드밴스2단계')) {
+          return ['19-01-2027', '16-02-2027', '17-04-2027', '06-06-2027', '27-06-2027', '20-07-2027'];
+        }
+        if (name.includes('프로누트라어드밴스HMO800g_1단계') || name.includes('프로누트라어드밴스HMO800g1단계')) {
+          return ['01-11-2026', '27-11-2026'];
+        }
+        if (name.includes('프로누트라어드밴스HMO800g_3단계') || name.includes('프로누트라어드밴스HMO800g3단계')) {
+          return ['18-07-2026', '10-09-2026', '25-10-2026', '29-11-2026', '18-02-2027'];
+        }
+        if (name.includes('탭스_1단계') || name.includes('탭스1단계')) {
+          return ['02-08-2026', '03-08-2026', '07-08-2026', '08-08-2026', '07-10-2026', '08-10-2026', '10-10-2026', '28-10-2026', '25-11-2026', '04-03-2027', '05-03-2027', '21-03-2027', '22-03-2027', '23-03-2027'];
+        }
+        if (name.includes('탭스_2단계') || name.includes('탭스2단계')) {
+          return ['24-07-2026', '25-07-2026', '27-07-2026', '29-09-2026', '30-09-2026', '01-10-2026', '02-10-2026', '03-10-2026', '01-11-2026', '02-11-2026', '20-12-2026', '01-03-2027'];
+        }
+        if (name.includes('한국공식') && (name.includes('프로누트라어드밴스HMO800g_2단계') || name.includes('프로누트라어드밴스HMO800g2단계'))) {
+          return ['2026-08-14', '2026-10-02', '2026-11-02', '2026-12-09', '2027-03-06'];
+        }
+      }
+      
+      // 2사이트 (nutricia-aL4pZ8Tq-2)
+      if (prefix === 'nutricia-aL4pZ8Tq-2') {
+        if (name.includes('프로푸트라듀오어드밴스_PRE프레') || name.includes('프로푸트라듀오어드밴스PRE프레')) {
+          return ['20-02-2027', '15-03-2027', '22-07-2027'];
+        }
+        if (name.includes('프로푸트라듀오어드밴스_1단계') || name.includes('프로푸트라듀오어드밴스1단계')) {
+          return ['21-02-2027', '19-03-2027', '01-06-2027', '21-07-2027', '07-09-2027', '21-11-2027'];
+        }
+        if (name.includes('프로푸트라듀오어드밴스_2단계') || name.includes('프로푸트라듀오어드밴스2단계')) {
+          return ['19-01-2027', '16-02-2027', '17-04-2027', '27-06-2027', '20-07-2027'];
+        }
+        if (name.includes('프로누트라어드밴스HMO800g_2단계') || name.includes('프로누트라어드밴스HMO800g2단계')) {
+          return ['08-09-2026'];
+        }
+        if (name.includes('탭스_1단계') || name.includes('탭스1단계')) {
+          return ['02-08-2026', '19-01-2027', '28-01-2027', '05-03-2027', '21-03-2027'];
+        }
+        if (name.includes('탭스_2단계') || name.includes('탭스2단계')) {
+          return ['30-09-2026', '20-01-2027', '21-01-2027'];
+        }
+      }
+      
+      // 3사이트 (nutricia-nu7VnCwR3H-3)
+      if (prefix === 'nutricia-nu7VnCwR3H-3') {
+        if (name.includes('프로푸트라듀오어드밴스_1단계') || name.includes('프로푸트라듀오어드밴스1단계')) {
+          return ['21-11-2027'];
+        }
+      }
+      
+      // 4사이트 (nutricia-MK2rP9dS-4)
+      if (prefix === 'nutricia-MK2rP9dS-4') {
+        if (name.includes('프로푸트라듀오어드밴스_PRE프레') || name.includes('프로푸트라듀오어드밴스PRE프레')) {
+          return ['17-12-2026', '20-02-2027', '15-03-2027', '22-04-2027', '01-06-2027', '15-09-2027'];
+        }
+        if (name.includes('프로푸트라듀오어드밴스_1단계') || name.includes('프로푸트라듀오어드밴스1단계')) {
+          return ['21-02-2027', '19-03-2027', '21-04-2027', '01-06-2027', '21-07-2027', '07-09-2027', '16-09-2027', '21-11-2027'];
+        }
+        if (name.includes('프로푸트라듀오어드밴스_2단계') || name.includes('프로푸트라듀오어드밴스2단계')) {
+          return ['19-01-2027', '16-02-2027', '17-04-2027', '06-06-2027'];
+        }
+      }
+      
+      return [];
+    }
+
+    // 해당몰 대상여부 계산 (등록된 제품명+제조번호 기반)
+    function calculateTargetProduct(prefix, uniqueCodesArray) {
+      if (!uniqueCodesArray || uniqueCodesArray.length === 0) return '';
+      
+      // 모든 제품이 해당몰 Part A 목록에 있는지 확인
+      let allMatch = true;
+      let hasAnyProduct = false;
+      
+      for (const uc of uniqueCodesArray) {
+        if (!uc || (!uc.productName && !uc.batchNumber)) continue;
+        hasAnyProduct = true;
+        
+        const productName = (uc.productName || '').trim();
+        const batchNumber = (uc.batchNumber || '').trim();
+        
+        if (!productName || !batchNumber) {
+          // 제품명이나 제조번호가 없으면 판단 불가
+          allMatch = false;
+          break;
+        }
+        
+        const allowedBatches = getProductBatchNumbersForPrefix(prefix, productName);
+        if (allowedBatches.length === 0) {
+          // 해당 제품에 대한 제조번호 목록이 없으면 직접 입력 제품 (판단 불가)
+          allMatch = false;
+          break;
+        }
+        
+        // 제조번호가 허용 목록에 있는지 확인 (날짜 형식 정규화 필요)
+        const normalizedBatch = batchNumber.trim();
+        const isInList = allowedBatches.some(b => {
+          const normalizedAllowed = b.trim();
+          return normalizedBatch === normalizedAllowed;
+        });
+        
+        if (!isInList) {
+          allMatch = false;
+          break;
+        }
+      }
+      
+      if (!hasAnyProduct) return '';
+      return allMatch ? 'Y' : 'N';
+    }
+
     function getUniqueCodesArray(d) {
       let arr = d.uniqueCodesData;
       if (Array.isArray(arr)) return arr;
@@ -1061,14 +1190,44 @@
       const infoRowsEl = document.getElementById('detailModalInfoRows');
       const flagsEl = document.getElementById('detailModalFlags');
       titleEl.textContent = '고객 상세 · 사진 보기 — ' + (d.name || d.contact || d.id || '');
-      infoRowsEl.innerHTML =
-        '<div class="info-row"><strong>이름</strong> ' + escapeHtml(d.name || '-') + '</div>' +
-        '<div class="info-row"><strong>연락처</strong> ' + escapeHtml(d.contact || '-') + '</div>' +
-        '<div class="info-row"><strong>주소</strong> ' + escapeHtml(d.address || '-') + '</div>' +
-        '<div class="info-row"><strong>상세주소</strong> ' + escapeHtml(d.addressDetail || '-') + '</div>' +
-        '<div class="info-row"><strong>개인통관부호</strong> ' + escapeHtml(d.customsCode || '-') + '</div>' +
-        '<div class="info-row"><strong>접수ID</strong> ' + escapeHtml(d.id || '-') + '</div>' +
-        '<div class="info-row"><strong>접수일시</strong> ' + formatDate(d.createdAt) + '</div>';
+      let infoHtml = '';
+      infoHtml += '<div class="info-section"><h3>고객 정보</h3>';
+      infoHtml += '<div class="info-row"><strong>이름</strong> ' + escapeHtml(d.name || '-') + '</div>';
+      infoHtml += '<div class="info-row"><strong>연락처</strong> ' + escapeHtml(d.contact || '-') + '</div>';
+      infoHtml += '<div class="info-row"><strong>주소</strong> ' + escapeHtml(d.address || '-') + '</div>';
+      infoHtml += '<div class="info-row"><strong>상세주소</strong> ' + escapeHtml(d.addressDetail || '-') + '</div>';
+      infoHtml += '<div class="info-row"><strong>개인통관부호</strong> ' + escapeHtml(d.customsCode || '-') + '</div>';
+      infoHtml += '<div class="info-row"><strong>접수ID</strong> ' + escapeHtml(d.id || '-') + '</div>';
+      infoHtml += '<div class="info-row"><strong>접수일시</strong> ' + formatDate(d.createdAt) + '</div>';
+      infoHtml += '</div>';
+      
+      // AI 검토 결과 표시
+      if (d.aiReviewedAt || d.aiReviewOpinion || d.orderNumber || d.trackingNumber || d.aiUniqueCodeMatch) {
+        infoHtml += '<div class="info-section ai-review-block">';
+        infoHtml += '<h2 style="color:#fff;margin-bottom:12px;">AI 검토 결과</h2>';
+        infoHtml += '<div class="info-grid">';
+        
+        // 해당몰 대상여부: 등록된 제품명+제조번호로 자체 계산
+        const u = getUniqueCodesArray(d);
+        const prefix = d._prefix || '';
+        const targetProductValue = calculateTargetProduct(prefix, u);
+        if (targetProductValue) {
+          infoHtml += '<div class="info-item" title="Y/N 기준: 제출된 사이트(몰) Part A 제품·제조번호 허용 목록에 포함되는지 (자체 계산)"><label>해당몰 대상여부</label><span>' + escapeHtml((targetProductValue === 'Y' || targetProductValue === 'N') ? targetProductValue : '정보부족') + '</span></div>';
+        }
+        infoHtml += '<div class="info-item" title="1번 구매영수증에서 확인된 주문번호"><label>주문번호</label><span>' + escapeHtml(d.orderNumber || '-') + '</span></div>';
+        infoHtml += '<div class="info-item" title="1번 구매영수증에서 확인된 송장번호"><label>송장번호</label><span>' + escapeHtml(d.trackingNumber || '-') + '</span></div>';
+        infoHtml += '<div class="info-item" title="Y/N: 3번 사진 수=등록 건수, 제조번호+고유번호 캔별 매칭(전산 중복접수 기준)"><label>제조·고유매칭</label><span>' + escapeHtml((d.aiUniqueCodeMatch === 'Y' || d.aiUniqueCodeMatch === 'N') ? d.aiUniqueCodeMatch : '정보부족') + '</span></div>';
+        infoHtml += '<div class="info-item"><label>AI검토일시</label><span>' + escapeHtml(d.aiReviewedAt ? d.aiReviewedAt.replace('T', ' ').slice(0, 19) : '-') + '</span></div>';
+        infoHtml += '</div>';
+        if (d.aiReviewOpinion) {
+          infoHtml += '<div class="info-item" style="margin-top:8px;"><label>AI검토의견</label><div class="ai-opinion-box">' + escapeHtml(d.aiReviewOpinion) + '</div></div>';
+        } else {
+          infoHtml += '<div class="info-item" style="margin-top:8px;"><label>AI검토의견</label><span style="color:#888;">미검토</span></div>';
+        }
+        infoHtml += '</div>';
+      }
+      
+      infoRowsEl.innerHTML = infoHtml;
       const rC = d.refundDone ? ' checked' : '';
       const eC = d.exchangeDone ? ' checked' : '';
       const iC = d.invalidInfo ? ' checked' : '';
