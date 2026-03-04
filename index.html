@@ -1044,8 +1044,8 @@
         rowsHtml += '<td><span class="cell-text">' + escapeHtml(d.customsCode || '-') + '</span></td>';
         rowsHtml += '<td>' + escapeHtml(d.id || '-') + '</td>';
         rowsHtml += '<td>' + formatDate(d.createdAt) + '</td>';
-        rowsHtml += '<td><label><input type="checkbox" class="list-cb-refund" data-field="refundDone"' + refundC + lockedAttr + '> 환불</label></td>';
-        rowsHtml += '<td><label><input type="checkbox" class="list-cb-exchange" data-field="exchangeDone"' + exchangeC + lockedAttr + '> 교환</label></td>';
+        rowsHtml += '<td><label><input type="checkbox" class="list-cb-refund" data-field="refundDone"' + refundC + ' disabled title="마스터 페이지에서만 수정 가능"> 환불</label></td>';
+        rowsHtml += '<td><label><input type="checkbox" class="list-cb-exchange" data-field="exchangeDone"' + exchangeC + ' disabled title="마스터 페이지에서만 수정 가능"> 교환</label></td>';
         rowsHtml += '<td><label><input type="checkbox" class="list-cb-invalid" data-field="invalidInfo"' + invalidC + lockedAttr + '> 잘못</label></td>';
         rowsHtml += '<td><label><input type="checkbox" class="list-cb-sixCans" data-field="sixCansOrMore"' + sixCansC + '> 6캔이상</label></td>';
         rowsHtml += '<td class="cell-flag">' + (d.refundComplete ? 'Y' : '-') + '</td>';
@@ -1288,8 +1288,9 @@
       flagsEl.innerHTML =
         '<h3>상태 체크 (저장됨)</h3>' +
         (dmLocked ? '<p style="font-size:12px;color:#856404;margin-bottom:8px;">※ 환불완료/교환완료 건 — 환불·교환·잘못된정보는 수정 불가</p>' : '') +
-        '<label><input type="checkbox" id="dm-cb-refund" data-field="refundDone"' + rC + dmLockedAttr + '> 환불</label>' +
-        '<label><input type="checkbox" id="dm-cb-exchange" data-field="exchangeDone"' + eC + dmLockedAttr + '> 교환</label>' +
+        '<p style="font-size:12px;color:#856404;margin-bottom:8px;">※ 환불·교환 체크박스는 마스터 페이지에서만 수정 가능합니다.</p>' +
+        '<label><input type="checkbox" id="dm-cb-refund" data-field="refundDone"' + rC + ' disabled title="마스터 페이지에서만 수정 가능"> 환불</label>' +
+        '<label><input type="checkbox" id="dm-cb-exchange" data-field="exchangeDone"' + eC + ' disabled title="마스터 페이지에서만 수정 가능"> 교환</label>' +
         '<label><input type="checkbox" id="dm-cb-invalid" data-field="invalidInfo"' + iC + dmLockedAttr + '> 잘못된정보</label>' +
         '<label><input type="checkbox" id="dm-cb-sixCans" data-field="sixCansOrMore"' + sC + '> 6캔이상</label>' +
         '<p style="font-size:12px;margin-top:8px;color:#555;">환불완료 ' + (d.refundComplete ? 'Y' : '-') + ' / 교환완료 ' + (d.exchangeComplete ? 'Y' : '-') + ' / 증빙오류(반려) ' + (d.proofError ? 'Y' : '-') + (d.proofErrorReason ? ' — ' + escapeHtml(d.proofErrorReason) : '') + '</p>';
@@ -1372,9 +1373,10 @@
       const d = currentDetailData;
       if (!d || !db) return;
       const locked = !!(d.refundComplete || d.exchangeComplete);
+      // 환불/교환은 항상 기존 값 유지 (마스터 페이지에서만 수정 가능)
+      payload.refundDone = !!d.refundDone;
+      payload.exchangeDone = !!d.exchangeDone;
       if (locked) {
-        payload.refundDone = !!d.refundDone;
-        payload.exchangeDone = !!d.exchangeDone;
         payload.invalidInfo = !!d.invalidInfo;
       }
       const id = d.id;
@@ -1425,18 +1427,17 @@
         const sixCansOrMore = !!cbSix?.checked;
         saveFlagsOnlyByData({ refundDone, exchangeDone, invalidInfo, sixCansOrMore });
       };
-      [cbRefund, cbExchange, cbInvalid].forEach(cb => {
-        if (!cb) return;
-        cb.addEventListener('change', () => {
-          const field = cb.getAttribute('data-field');
-          if (cb.checked && (field === 'refundDone' || field === 'exchangeDone' || field === 'invalidInfo')) {
-            const label = field === 'refundDone' ? '환불' : (field === 'exchangeDone' ? '교환' : '잘못된 정보');
-            if (!confirm('이 고객\n\n' + label + ' 체크가 맞습니까?\n\n확인 시 저장됩니다.')) { cb.checked = false; return; }
+      // 환불/교환 체크박스는 disabled이므로 이벤트 리스너 추가하지 않음
+      if (cbInvalid) {
+        cbInvalid.addEventListener('change', () => {
+          const field = cbInvalid.getAttribute('data-field');
+          if (cbInvalid.checked && field === 'invalidInfo') {
+            if (!confirm('이 고객\n\n잘못된 정보 체크가 맞습니까?\n\n확인 시 저장됩니다.')) { cbInvalid.checked = false; return; }
           }
           enforceDetailModalSingleFlag();
           saveFromModal();
         });
-      });
+      }
       if (cbSix) cbSix.addEventListener('change', saveFromModal);
     }
 
@@ -1711,13 +1712,12 @@
       const item = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
       const locked = !!(item && (item.refundComplete || item.exchangeComplete));
       enforceSingleFlag(row);
-      let refundDone = !!row.querySelector('.list-cb-refund')?.checked;
-      let exchangeDone = !!row.querySelector('.list-cb-exchange')?.checked;
+      // 환불/교환은 항상 기존 값 유지 (마스터 페이지에서만 수정 가능)
+      let refundDone = item ? !!item.refundDone : false;
+      let exchangeDone = item ? !!item.exchangeDone : false;
       let invalidInfo = !!row.querySelector('.list-cb-invalid')?.checked;
       const sixCansOrMore = !!row.querySelector('.list-cb-sixCans')?.checked;
       if (locked && item) {
-        refundDone = !!item.refundDone;
-        exchangeDone = !!item.exchangeDone;
         invalidInfo = !!item.invalidInfo;
       }
       const payload = { refundDone, exchangeDone, invalidInfo, sixCansOrMore };
@@ -1744,7 +1744,8 @@
       const tbody = listEl.querySelector('tbody');
       if (!tbody) return;
       tbody.querySelectorAll('tr').forEach((row) => {
-        row.querySelectorAll('.list-cb-refund, .list-cb-exchange, .list-cb-invalid, .list-cb-sixCans').forEach((cb) => {
+        // 환불/교환 체크박스는 disabled이므로 이벤트 리스너 추가하지 않음
+        row.querySelectorAll('.list-cb-invalid, .list-cb-sixCans').forEach((cb) => {
           cb.addEventListener('change', () => {
             const field = cb.getAttribute('data-field');
             if (field === 'sixCansOrMore') {
@@ -1752,12 +1753,10 @@
               return;
             }
             if (cb.checked) {
-              const label = field === 'refundDone' ? '환불' : (field === 'exchangeDone' ? '교환' : '잘못된 정보');
+              const label = field === 'invalidInfo' ? '잘못된 정보' : '';
               const info = getRowCustomerInfo(row);
               cb.checked = false;
               if (!confirm(info + '\n\n' + label + ' 체크가 맞습니까?\n\n확인 시 체크 후 저장됩니다.')) return;
-              row.querySelector('.list-cb-refund').checked = (cb === row.querySelector('.list-cb-refund'));
-              row.querySelector('.list-cb-exchange').checked = (cb === row.querySelector('.list-cb-exchange'));
               row.querySelector('.list-cb-invalid').checked = (cb === row.querySelector('.list-cb-invalid'));
               saveFlagsOnly(row);
               return;
