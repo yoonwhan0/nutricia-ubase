@@ -1302,15 +1302,22 @@
           }
         }
 
-        // 상담사별 실적 통계: 유선안내완료 체크한 고객 수 (통관번호 기준)
+        // 상담사별 실적 통계: 유선안내완료 체크한 고객 수 (통관번호+몰 기준)
         const accountPerformance = {};
         CS_ACCOUNTS.forEach(email => {
           if (accountFilter && email !== accountFilter) return;
           accountPerformance[email] = {
             account: email,
-            completeCustomers: new Set(), // 통관번호 기준 고객 Set
+            completeCustomers: new Set(), // 통관번호+몰 조합 기준 고객 Set
             completeCount: 0, // 접수건 수
-            refundToExchangeCount: 0 // 환불→교환 전환 건수
+            refundToExchangeCount: 0, // 환불→교환 전환 건수
+            // 몰별 고객 수 집계
+            completeCustomersByPrefix: {
+              'nutricia-x9fQ2kM7-1': new Set(), // 아이베
+              'nutricia-aL4pZ8Tq-2': new Set(), // 림인터네셔널
+              'nutricia-nu7VnCwR3H-3': new Set(), // 크린랩
+              'nutricia-MK2rP9dS-4': new Set() // 몰테일
+            }
           };
         });
 
@@ -1333,6 +1340,12 @@
                 const customerId = getCustomerIdentifierWithPrefix(item);
                 if (customerId) {
                   acc.completeCustomers.add(customerId);
+                  
+                  // 몰별로도 집계
+                  const prefix = item._prefix;
+                  if (prefix && acc.completeCustomersByPrefix[prefix]) {
+                    acc.completeCustomersByPrefix[prefix].add(customerId);
+                  }
                 }
                 
                 // 환불→교환 전환 여부 확인
@@ -1347,6 +1360,11 @@
         // Set을 숫자로 변환
         Object.values(accountPerformance).forEach(stat => {
           stat.completeCustomerCount = stat.completeCustomers.size;
+          // 몰별 고객 수도 숫자로 변환
+          stat.completeCustomerCountByPrefix = {};
+          PREFIXES.forEach(prefix => {
+            stat.completeCustomerCountByPrefix[prefix] = stat.completeCustomersByPrefix[prefix].size;
+          });
         });
 
         // 필터링된 상담사만 표시
@@ -1366,6 +1384,10 @@
         html += '<th>상담사</th>';
         html += '<th>최종 인센티브 산정<br><small style="font-weight: normal; color: #666;">(상세설명)</small></th>';
         html += '<th>유선안내완료 고객 수<br><small style="font-weight: normal; color: #666;">(통관번호+몰 기준)</small></th>';
+        // 몰별 컬럼 추가
+        PREFIXES.forEach((prefix, idx) => {
+          html += '<th>' + PROJECT_LABELS[idx] + '<br><small style="font-weight: normal; color: #666;">(고객 수)</small></th>';
+        });
         html += '<th>유선안내완료 접수건 수</th>';
         html += '<th>환불→교환 전환 건수<br><small style="font-weight: normal; color: #666;">(별도 인센티브)</small></th>';
         html += '</tr></thead><tbody>';
@@ -1389,6 +1411,11 @@
           html += '<div style="color: #666; font-size: 11px;" title="' + escapeHtml(incentiveDetail) + '">' + escapeHtml(incentiveDetail) + '</div>';
           html += '</td>';
           html += '<td class="number" style="font-weight: bold; color: #28a745;">' + stat.completeCustomerCount + '명</td>';
+          // 몰별 고객 수 컬럼
+          PREFIXES.forEach(prefix => {
+            const count = stat.completeCustomerCountByPrefix[prefix] || 0;
+            html += '<td class="number" style="color: #666;">' + count + '명</td>';
+          });
           html += '<td class="number">' + stat.completeCount + '건</td>';
           html += '<td class="number" style="font-weight: bold; color: #ff6b00;">' + stat.refundToExchangeCount + '건</td>';
           html += '</tr>';
@@ -1396,6 +1423,12 @@
 
         // 합계
         const totalCustomers = new Set();
+        const totalCustomersByPrefix = {
+          'nutricia-x9fQ2kM7-1': new Set(),
+          'nutricia-aL4pZ8Tq-2': new Set(),
+          'nutricia-nu7VnCwR3H-3': new Set(),
+          'nutricia-MK2rP9dS-4': new Set()
+        };
         let totalCount = 0;
         let totalRefundToExchange = 0;
         let totalIncentive = 0;
@@ -1404,6 +1437,12 @@
         
         filteredStats.forEach(stat => {
           stat.completeCustomers.forEach(id => totalCustomers.add(id));
+          // 몰별 합계도 계산
+          PREFIXES.forEach(prefix => {
+            stat.completeCustomersByPrefix[prefix].forEach(id => {
+              totalCustomersByPrefix[prefix].add(id);
+            });
+          });
           totalCount += stat.completeCount;
           totalRefundToExchange += stat.refundToExchangeCount;
           totalIncentive += (stat.completeCustomerCount * CUSTOMER_INCENTIVE_RATE) + (stat.refundToExchangeCount * CONVERSION_INCENTIVE_RATE);
@@ -1415,6 +1454,11 @@
         html += '<div style="font-weight: bold; color: #0066cc;">' + totalIncentive.toLocaleString() + '원</div>';
         html += '</td>';
         html += '<td class="number" style="color: #28a745;">' + totalCustomers.size + '명</td>';
+        // 몰별 합계 컬럼
+        PREFIXES.forEach(prefix => {
+          const count = totalCustomersByPrefix[prefix].size;
+          html += '<td class="number" style="color: #666;">' + count + '명</td>';
+        });
         html += '<td class="number">' + totalCount + '건</td>';
         html += '<td class="number" style="color: #ff6b00;">' + totalRefundToExchange + '건</td>';
         html += '</tr>';
@@ -1448,28 +1492,53 @@
       csv += '조회 기간: ' + (useDateFilter ? (startDate + ' ~ ' + endDate) : '전체') + '\n';
       csv += '상담사 필터: ' + (accountFilter === '전체' ? '전체' : accountFilter.replace('@ubase.co.kr', '')) + '\n';
       csv += '생성일시: ' + new Date().toLocaleString('ko-KR') + '\n\n';
-      csv += '상담사,최종 인센티브 산정(원),유선안내완료 고객 수(명),유선안내완료 접수건 수(건),환불→교환 전환 건수(건)\n';
+      
+      // CSV 헤더: 상담사, 인센티브, 총 고객 수, 몰별 고객 수(4개), 접수건 수, 전환 건수
+      csv += '상담사,최종 인센티브 산정(원),유선안내완료 고객 수(명)';
+      PREFIXES.forEach((prefix, idx) => {
+        csv += ',' + PROJECT_LABELS[idx] + ' 고객 수(명)';
+      });
+      csv += ',유선안내완료 접수건 수(건),환불→교환 전환 건수(건)\n';
 
       const CUSTOMER_INCENTIVE_RATE = 1000;
       const CONVERSION_INCENTIVE_RATE = 2000;
 
       performanceStatsData.forEach(stat => {
         const totalIncentive = (stat.completeCustomerCount * CUSTOMER_INCENTIVE_RATE) + (stat.refundToExchangeCount * CONVERSION_INCENTIVE_RATE);
-        csv += stat.account.replace('@ubase.co.kr', '') + ',' + totalIncentive + ',' + stat.completeCustomerCount + ',' + stat.completeCount + ',' + stat.refundToExchangeCount + '\n';
+        csv += stat.account.replace('@ubase.co.kr', '') + ',' + totalIncentive + ',' + stat.completeCustomerCount;
+        PREFIXES.forEach(prefix => {
+          csv += ',' + (stat.completeCustomerCountByPrefix[prefix] || 0);
+        });
+        csv += ',' + stat.completeCount + ',' + stat.refundToExchangeCount + '\n';
       });
 
       // 합계
       const totalCustomers = new Set();
+      const totalCustomersByPrefix = {
+        'nutricia-x9fQ2kM7-1': new Set(),
+        'nutricia-aL4pZ8Tq-2': new Set(),
+        'nutricia-nu7VnCwR3H-3': new Set(),
+        'nutricia-MK2rP9dS-4': new Set()
+      };
       let totalCount = 0;
       let totalRefundToExchange = 0;
       let totalIncentive = 0;
       performanceStatsData.forEach(stat => {
         stat.completeCustomers.forEach(id => totalCustomers.add(id));
+        PREFIXES.forEach(prefix => {
+          stat.completeCustomersByPrefix[prefix].forEach(id => {
+            totalCustomersByPrefix[prefix].add(id);
+          });
+        });
         totalCount += stat.completeCount;
         totalRefundToExchange += stat.refundToExchangeCount;
         totalIncentive += (stat.completeCustomerCount * CUSTOMER_INCENTIVE_RATE) + (stat.refundToExchangeCount * CONVERSION_INCENTIVE_RATE);
       });
-      csv += '합계,' + totalIncentive + ',' + totalCustomers.size + ',' + totalCount + ',' + totalRefundToExchange + '\n';
+      csv += '합계,' + totalIncentive + ',' + totalCustomers.size;
+      PREFIXES.forEach(prefix => {
+        csv += ',' + totalCustomersByPrefix[prefix].size;
+      });
+      csv += ',' + totalCount + ',' + totalRefundToExchange + '\n';
 
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
