@@ -1844,32 +1844,86 @@
         return;
       }
 
-      const perAccount = Math.floor(unassigned.length / accounts.length);
-      const remainder = unassigned.length % accounts.length;
+      // 통관번호 기준으로 고객별 접수건 그룹화
+      const customerGroups = new Map(); // customerId -> [items]
+      
+      unassigned.forEach(item => {
+        const customerId = getCustomerIdentifier(item);
+        if (customerId) {
+          if (!customerGroups.has(customerId)) {
+            customerGroups.set(customerId, []);
+          }
+          customerGroups.get(customerId).push(item);
+        } else {
+          // 통관번호가 없는 경우 개별 처리
+          const uniqueKey = `${item._prefix}_${item._dateKey}_${item.id}`;
+          customerGroups.set(uniqueKey, [item]);
+        }
+      });
+
+      // 이미 배정된 고객들의 통관번호 추적 (이미 배정된 고객은 건너뛰기)
+      const assignedCustomers = new Set();
+      distributionHistoryMap.forEach((history, key) => {
+        if (Array.isArray(history) && history.length > 0) {
+          const parts = key.split('_');
+          if (parts.length >= 3) {
+            const prefix = parts[0];
+            const dateKey = parts[1];
+            const id = parts.slice(2).join('_');
+            const item = allSubmissions.find(s => s._prefix === prefix && s._dateKey === dateKey && s.id === id);
+            if (item) {
+              const customerId = getCustomerIdentifier(item);
+              if (customerId) {
+                assignedCustomers.add(customerId);
+              }
+            }
+          }
+        }
+      });
+
+      // 이미 배정된 고객 제외
+      const unassignedGroups = Array.from(customerGroups.entries()).filter(([customerId]) => {
+        return !assignedCustomers.has(customerId);
+      });
+
+      if (unassignedGroups.length === 0) {
+        const filterLabel = filterType === 'noCheck' ? '환불/교환 미체크' : '증빙오류(반려)';
+        alert('분배할 접수건이 없습니다. (통관번호 기준으로 모든 고객이 이미 배정되었습니다)');
+        return;
+      }
+
+      // 고객 그룹 단위로 균등 분배 (같은 통관번호를 가진 모든 접수건은 같은 상담사에게)
+      const perAccount = Math.floor(unassignedGroups.length / accounts.length);
+      const remainder = unassignedGroups.length % accounts.length;
 
       let accountIndex = 0;
-      let assignedCount = 0;
+      let assignedGroupCount = 0;
 
-      unassigned.forEach((item, idx) => {
-        const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+      unassignedGroups.forEach(([customerId, items]) => {
         const account = accounts[accountIndex];
-        const category = item.proofError ? 'proofError' : 'noCheck';
+        const category = items[0].proofError ? 'proofError' : 'noCheck';
         
-        if (!distributionHistoryMap.has(key)) {
-          distributionHistoryMap.set(key, []);
-        }
-        
-        distributionHistoryMap.get(key).push({
-          account: account,
-          timestamp: Date.now(),
-          type: 'assign',
-          category: category // 카테고리 정보 저장
+        // 같은 통관번호를 가진 모든 접수건을 같은 상담사에게 배정
+        items.forEach(item => {
+          const key = `${item._prefix}_${item._dateKey}_${item.id}`;
+          
+          if (!distributionHistoryMap.has(key)) {
+            distributionHistoryMap.set(key, []);
+          }
+          
+          distributionHistoryMap.get(key).push({
+            account: account,
+            timestamp: Date.now(),
+            type: 'assign',
+            category: category
+          });
         });
 
-        assignedCount++;
-        if (assignedCount >= perAccount + (accountIndex < remainder ? 1 : 0)) {
+        assignedGroupCount++;
+        // 고객 그룹 단위로 카운팅 (같은 통관번호 = 1그룹)
+        if (assignedGroupCount >= perAccount + (accountIndex < remainder ? 1 : 0)) {
           accountIndex++;
-          assignedCount = 0;
+          assignedGroupCount = 0;
         }
       });
 
