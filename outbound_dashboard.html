@@ -429,6 +429,7 @@
             <option value="cs10@ubase.co.kr">cs10</option>
           </select>
           <label style="margin-left: 12px;">상태:</label>
+          <button type="button" class="agent-filter-btn" data-filter="callIncomplete" style="background: #6c757d; color: #fff;">유선안내 미완료</button>
           <button type="button" class="agent-filter-btn" data-filter="callComplete" style="background: #28a745; color: #fff;">유선안내완료</button>
           <button type="button" class="agent-filter-btn" data-filter="finalUnreached" style="background: #dc3545; color: #fff;">최종미연결</button>
           <button type="button" class="agent-filter-btn" data-filter="postProcessing" style="background: #ffc107; color: #333;">후처리관리중</button>
@@ -2545,7 +2546,7 @@
     });
 
     // 상담원 상세 관리: 필터 버튼 클릭
-    let selectedAgentFilter = 'all';
+    let selectedAgentFilter = 'callIncomplete'; // 기본값: 유선안내 미완료 (해야할일)
     document.querySelectorAll('.agent-filter-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.agent-filter-btn').forEach((b) => {
@@ -2557,6 +2558,14 @@
         selectedAgentFilter = btn.getAttribute('data-filter');
       });
     });
+    // 초기 상태: 유선안내 미완료 버튼 선택 표시
+    (() => {
+      const defaultBtn = document.querySelector('.agent-filter-btn[data-filter="callIncomplete"]');
+      if (defaultBtn) {
+        defaultBtn.style.opacity = '1';
+        defaultBtn.style.fontWeight = 'bold';
+      }
+    })();
 
     // 상담원 상세 관리: 조회 버튼
     const agentDetailAccountSelect = document.getElementById('agentDetailAccountSelect');
@@ -2634,10 +2643,19 @@
           const isPostProcessing = ph.length > 0 ? isPostProcessingForKey(ph) : false;
 
           // 필터 적용
-          if (filter === 'callComplete' && !isCallComplete) return;
-          if (filter === 'finalUnreached' && !isFinalUnreached) return;
-          if (filter === 'postProcessing' && !isPostProcessing) return;
-          if (filter === 'all' || filter === '') {
+          if (filter === 'callIncomplete') {
+            // 유선안내 미완료: 유선안내완료가 체크되지 않은 건만
+            if (isCallComplete) return;
+          } else if (filter === 'callComplete') {
+            // 유선안내완료: 유선안내완료 체크되었지만 최종미연결이 아닌 건만
+            if (!isCallComplete || isFinalUnreached) return;
+          } else if (filter === 'finalUnreached') {
+            // 최종미연결: 최종미연결 체크된 건만 (유선안내완료이면서 최종미연결인 건도 포함)
+            if (!isFinalUnreached) return;
+          } else if (filter === 'postProcessing') {
+            // 후처리관리중: 후처리관리중 체크된 건만
+            if (!isPostProcessing) return;
+          } else if (filter === 'all' || filter === '') {
             // 전체는 모든 배정된 건 표시
           }
 
@@ -2657,7 +2675,11 @@
           return;
         }
 
-        const filterLabel = filter === 'all' ? '전체' : (filter === 'callComplete' ? '유선안내완료' : (filter === 'finalUnreached' ? '최종미연결' : '후처리관리중'));
+        const filterLabel = filter === 'all' ? '전체' : 
+          (filter === 'callIncomplete' ? '유선안내 미완료' : 
+          (filter === 'callComplete' ? '유선안내완료' : 
+          (filter === 'finalUnreached' ? '최종미연결' : 
+          (filter === 'postProcessing' ? '후처리관리중' : '전체'))));
         let html = '<table class="stats-table" style="margin-top: 12px;">';
         html += '<caption style="caption-side:top;text-align:left;font-weight:600;margin-bottom:8px;">' + account.replace('@ubase.co.kr', '') + ' 배정 데이터 (' + filterLabel + ') - 총 ' + filteredItems.length + '건</caption>';
         html += '<thead><tr>';
