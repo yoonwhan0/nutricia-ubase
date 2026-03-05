@@ -2586,6 +2586,8 @@
       agentDetailResult.innerHTML = '';
 
       try {
+        // 분배 이력 최신 데이터 로드
+        distributionHistoryMap = await loadDistributionHistoryFromFirebase();
         await loadProcessingAndCounselingFromFirebase();
         const latestDistributionMap = new Map();
         
