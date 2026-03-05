@@ -1047,8 +1047,8 @@
         rowsHtml += '<td>' + formatDate(d.createdAt) + '</td>';
         rowsHtml += '<td><label><input type="checkbox" class="list-cb-refund" data-field="refundDone"' + refundC + ' disabled title="마스터 페이지에서만 수정 가능"> 환불</label></td>';
         rowsHtml += '<td><label><input type="checkbox" class="list-cb-exchange" data-field="exchangeDone"' + exchangeC + ' disabled title="마스터 페이지에서만 수정 가능"> 교환</label></td>';
-        rowsHtml += '<td><label><input type="checkbox" class="list-cb-invalid" data-field="invalidInfo"' + invalidC + '> 잘못</label></td>';
-        rowsHtml += '<td><label><input type="checkbox" class="list-cb-sixCans" data-field="sixCansOrMore"' + sixCansC + '> 6캔이상</label></td>';
+        rowsHtml += '<td><label><input type="checkbox" class="list-cb-invalid" data-field="invalidInfo"' + invalidC + lockedAttr + '> 잘못</label></td>';
+        rowsHtml += '<td><label><input type="checkbox" class="list-cb-sixCans" data-field="sixCansOrMore"' + sixCansC + lockedAttr + '> 6캔이상</label></td>';
         rowsHtml += '<td class="cell-flag">' + (d.refundComplete ? 'Y' : '-') + '</td>';
         rowsHtml += '<td class="cell-flag">' + (d.exchangeComplete ? 'Y' : '-') + '</td>';
         rowsHtml += '<td class="cell-flag">' + (d.proofError ? 'Y' : '-') + '</td>';
@@ -1288,12 +1288,12 @@
       const dmLockedAttr = dmLocked ? ' disabled title="처리 완료 건 — 수정 불가"' : '';
       flagsEl.innerHTML =
         '<h3>상태 체크 (저장됨)</h3>' +
-        (dmLocked ? '<p style="font-size:12px;color:#856404;margin-bottom:8px;">※ 환불완료/교환완료 건 — 환불·교환은 마스터 페이지에서만 수정 가능</p>' : '') +
-        '<p style="font-size:12px;color:#856404;margin-bottom:8px;">※ 환불·교환 체크박스는 마스터 페이지에서만 수정 가능합니다. 잘못된정보·6캔이상은 여기서 체크 가능.</p>' +
+        (dmLocked ? '<p style="font-size:12px;color:#856404;margin-bottom:8px;">※ 환불완료/교환완료 건 — 모든 체크박스 수정 불가 (다른 전산에서 처리 완료)</p>' : '') +
+        '<p style="font-size:12px;color:#856404;margin-bottom:8px;">※ 환불·교환 체크박스는 마스터 페이지에서만 수정 가능합니다. 잘못된정보·6캔이상은 여기서 체크 가능합니다. (단, 환불완료/교환완료 건은 수정 불가)</p>' +
         '<label><input type="checkbox" id="dm-cb-refund" data-field="refundDone"' + rC + ' disabled title="마스터 페이지에서만 수정 가능"> 환불</label>' +
         '<label><input type="checkbox" id="dm-cb-exchange" data-field="exchangeDone"' + eC + ' disabled title="마스터 페이지에서만 수정 가능"> 교환</label>' +
-        '<label><input type="checkbox" id="dm-cb-invalid" data-field="invalidInfo"' + iC + '> 잘못된정보</label>' +
-        '<label><input type="checkbox" id="dm-cb-sixCans" data-field="sixCansOrMore"' + sC + '> 6캔이상</label>' +
+        '<label><input type="checkbox" id="dm-cb-invalid" data-field="invalidInfo"' + iC + dmLockedAttr + '> 잘못된정보</label>' +
+        '<label><input type="checkbox" id="dm-cb-sixCans" data-field="sixCansOrMore"' + sC + dmLockedAttr + '> 6캔이상</label>' +
         '<p style="font-size:12px;margin-top:8px;color:#555;">환불완료 ' + (d.refundComplete ? 'Y' : '-') + ' / 교환완료 ' + (d.exchangeComplete ? 'Y' : '-') + ' / 증빙오류(반려) ' + (d.proofError ? 'Y' : '-') + (d.proofErrorReason ? ' — ' + escapeHtml(d.proofErrorReason) : '') + '</p>';
       document.getElementById('detailModalPhotos').textContent = '사진 불러오는 중…';
       modal.classList.add('show');
@@ -1373,9 +1373,14 @@
     async function saveFlagsOnlyByData(payload) {
       const d = currentDetailData;
       if (!d || !db) return;
-      // 환불/교환은 항상 기존 값 유지 (마스터 페이지에서만 수정 가능). 잘못된정보·6캔이상은 항상 payload 값으로 저장
+      // 환불/교환은 항상 기존 값 유지 (마스터 페이지에서만 수정 가능)
       payload.refundDone = !!d.refundDone;
       payload.exchangeDone = !!d.exchangeDone;
+      // 환불완료/교환완료 체크된 건은 잘못된정보·6캔이상도 기존 값 유지 (수정 불가)
+      if (d.refundComplete || d.exchangeComplete) {
+        payload.invalidInfo = !!d.invalidInfo;
+        payload.sixCansOrMore = !!d.sixCansOrMore;
+      }
       const id = d.id;
       const dateKey = (d._dateKey || '').trim();
       const isLegacy = !!d._isLegacy;
@@ -1704,12 +1709,17 @@
       }
       const item = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
       // 잘못된정보·6캔이상은 enforceSingleFlag 호출 전에 읽어야 함 (환불/교환 체크 시 enforceSingleFlag가 invalid 체크를 해제함)
-      const invalidInfo = !!row.querySelector('.list-cb-invalid')?.checked;
-      const sixCansOrMore = !!row.querySelector('.list-cb-sixCans')?.checked;
+      let invalidInfo = !!row.querySelector('.list-cb-invalid')?.checked;
+      let sixCansOrMore = !!row.querySelector('.list-cb-sixCans')?.checked;
       enforceSingleFlag(row);
       // 환불/교환은 항상 기존 값 유지 (마스터 페이지에서만 수정 가능)
       let refundDone = item ? !!item.refundDone : false;
       let exchangeDone = item ? !!item.exchangeDone : false;
+      // 환불완료/교환완료 체크된 건은 잘못된정보·6캔이상도 기존 값 유지 (수정 불가)
+      if (item && (item.refundComplete || item.exchangeComplete)) {
+        invalidInfo = !!item.invalidInfo;
+        sixCansOrMore = !!item.sixCansOrMore;
+      }
       const payload = { refundDone, exchangeDone, invalidInfo, sixCansOrMore };
       const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
       const metaPath = prefix + '/submissions_meta/' + dateKey + '/' + id;
@@ -1735,10 +1745,14 @@
       if (!tbody) return;
       tbody.querySelectorAll('tr').forEach((row) => {
         // 환불/교환 체크박스는 disabled이므로 이벤트 리스너 추가하지 않음
+        const isLocked = row.getAttribute('data-locked') === '1';
         row.querySelectorAll('.list-cb-invalid, .list-cb-sixCans').forEach((cb) => {
-          cb.addEventListener('change', () => {
-            saveFlagsOnly(row);
-          });
+          // 환불완료/교환완료 체크된 건은 이벤트 리스너 추가하지 않음 (비활성화되어 있음)
+          if (!isLocked) {
+            cb.addEventListener('change', () => {
+              saveFlagsOnly(row);
+            });
+          }
         });
       });
     }
