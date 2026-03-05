@@ -340,7 +340,7 @@
     <div class="dashboard-section">
       <div class="dashboard-card">
         <h3 class="card-group-title">실적 체크 통계 (인센티브 기준)</h3>
-        <p class="hint">상담사별 유선안내완료 체크한 고객 수를 통관번호 기준으로 집계합니다. 동일 고객이 여러 번 접수해도 1명으로 집계됩니다. 환불→교환 전환 건수는 별도로 집계됩니다. (접수일 기준) 비워두면 전체 조회.</p>
+        <p class="hint">상담사별 유선안내완료 체크한 고객 수를 통관번호+몰 조합 기준으로 집계합니다. 같은 통관번호라도 몰이 다르면 별개 건으로 카운팅됩니다. 환불→교환 전환 건수는 별도 인센티브로 집계됩니다. (접수일 기준) 비워두면 전체 조회.</p>
         <div class="toolbar">
           <label><input type="checkbox" id="performanceDateAll" checked> 전체</label>
           <label style="margin-left:8px;">기간:</label>
@@ -819,7 +819,7 @@
       return String(v).replace(/[^0-9A-Za-z]/g, '').toUpperCase().trim();
     }
 
-    // 고객 식별자 반환 (통관번호 우선, 없으면 휴대폰 번호)
+    // 고객 식별자 반환 (통관번호 우선, 없으면 휴대폰 번호) - 기존 함수 (다른 곳에서 사용)
     function getCustomerIdentifier(item) {
       if (item && item.customsCode) {
         const normalized = normalizeCustomsCode(item.customsCode);
@@ -828,6 +828,27 @@
       if (item && item.contact) {
         const normalized = canonicalPhone(item.contact);
         if (normalized && normalized.length >= 10) return 'phone_' + normalized; // 휴대폰 번호가 10자리 이상이면 사용
+      }
+      return null; // 식별 불가
+    }
+
+    // 고객 식별자 반환 (통관번호 + 몰 조합 기준) - 인센티브 산정용
+    function getCustomerIdentifierWithPrefix(item) {
+      if (!item) return null;
+      const prefix = item._prefix || '';
+      if (item && item.customsCode) {
+        const normalized = normalizeCustomsCode(item.customsCode);
+        if (normalized && normalized.length >= 10) {
+          // 통관번호 + 몰 조합으로 반환 (같은 통관번호라도 몰이 다르면 별개 건)
+          return 'customs_' + normalized + '_' + prefix;
+        }
+      }
+      if (item && item.contact) {
+        const normalized = canonicalPhone(item.contact);
+        if (normalized && normalized.length >= 10) {
+          // 휴대폰 번호 + 몰 조합으로 반환
+          return 'phone_' + normalized + '_' + prefix;
+        }
       }
       return null; // 식별 불가
     }
@@ -1308,8 +1329,8 @@
               if (acc) {
                 acc.completeCount++;
                 
-                // 통관번호 우선, 없으면 휴대폰 번호
-                const customerId = getCustomerIdentifier(item);
+                // 통관번호 + 몰 조합 기준 (같은 통관번호라도 몰이 다르면 별개 건)
+                const customerId = getCustomerIdentifierWithPrefix(item);
                 if (customerId) {
                   acc.completeCustomers.add(customerId);
                 }
@@ -1343,14 +1364,30 @@
         let html = '<table class="stats-table" style="margin-top: 12px;">';
         html += '<thead><tr>';
         html += '<th>상담사</th>';
-        html += '<th>유선안내완료 고객 수<br><small style="font-weight: normal; color: #666;">(통관번호 기준)</small></th>';
+        html += '<th>최종 인센티브 산정<br><small style="font-weight: normal; color: #666;">(상세설명)</small></th>';
+        html += '<th>유선안내완료 고객 수<br><small style="font-weight: normal; color: #666;">(통관번호+몰 기준)</small></th>';
         html += '<th>유선안내완료 접수건 수</th>';
         html += '<th>환불→교환 전환 건수<br><small style="font-weight: normal; color: #666;">(별도 인센티브)</small></th>';
         html += '</tr></thead><tbody>';
 
         filteredStats.forEach(stat => {
+          // 인센티브 산정 계산 (단가는 나중에 설정 가능하도록 변수로 분리)
+          // 기본 단가: 유선안내완료 고객 1명당 1000원, 환불→교환 전환 1건당 2000원 (예시)
+          const CUSTOMER_INCENTIVE_RATE = 1000; // 유선안내완료 고객 1명당 인센티브
+          const CONVERSION_INCENTIVE_RATE = 2000; // 환불→교환 전환 1건당 인센티브
+          
+          const customerIncentive = stat.completeCustomerCount * CUSTOMER_INCENTIVE_RATE;
+          const conversionIncentive = stat.refundToExchangeCount * CONVERSION_INCENTIVE_RATE;
+          const totalIncentive = customerIncentive + conversionIncentive;
+          
+          const incentiveDetail = `고객수(${stat.completeCustomerCount}명 × ${CUSTOMER_INCENTIVE_RATE.toLocaleString()}원) + 전환건수(${stat.refundToExchangeCount}건 × ${CONVERSION_INCENTIVE_RATE.toLocaleString()}원) = ${totalIncentive.toLocaleString()}원`;
+          
           html += '<tr>';
           html += '<td class="text-left">' + escapeHtml(stat.account.replace('@ubase.co.kr', '')) + '</td>';
+          html += '<td class="text-left" style="font-size: 12px;">';
+          html += '<div style="font-weight: bold; color: #0066cc; margin-bottom: 4px;">' + totalIncentive.toLocaleString() + '원</div>';
+          html += '<div style="color: #666; font-size: 11px;" title="' + escapeHtml(incentiveDetail) + '">' + escapeHtml(incentiveDetail) + '</div>';
+          html += '</td>';
           html += '<td class="number" style="font-weight: bold; color: #28a745;">' + stat.completeCustomerCount + '명</td>';
           html += '<td class="number">' + stat.completeCount + '건</td>';
           html += '<td class="number" style="font-weight: bold; color: #ff6b00;">' + stat.refundToExchangeCount + '건</td>';
@@ -1361,14 +1398,22 @@
         const totalCustomers = new Set();
         let totalCount = 0;
         let totalRefundToExchange = 0;
+        let totalIncentive = 0;
+        const CUSTOMER_INCENTIVE_RATE = 1000;
+        const CONVERSION_INCENTIVE_RATE = 2000;
+        
         filteredStats.forEach(stat => {
           stat.completeCustomers.forEach(id => totalCustomers.add(id));
           totalCount += stat.completeCount;
           totalRefundToExchange += stat.refundToExchangeCount;
+          totalIncentive += (stat.completeCustomerCount * CUSTOMER_INCENTIVE_RATE) + (stat.refundToExchangeCount * CONVERSION_INCENTIVE_RATE);
         });
 
         html += '<tr style="background: #f0f0f0; font-weight: bold;">';
         html += '<td class="text-left">합계</td>';
+        html += '<td class="text-left" style="font-size: 12px;">';
+        html += '<div style="font-weight: bold; color: #0066cc;">' + totalIncentive.toLocaleString() + '원</div>';
+        html += '</td>';
         html += '<td class="number" style="color: #28a745;">' + totalCustomers.size + '명</td>';
         html += '<td class="number">' + totalCount + '건</td>';
         html += '<td class="number" style="color: #ff6b00;">' + totalRefundToExchange + '건</td>';
@@ -1399,26 +1444,32 @@
       const endDate = performanceEndDate.value || '전체';
       const accountFilter = performanceAccountSelect.value || '전체';
 
-      let csv = '실적 체크 통계 (통관번호 기준 고객 수)\n';
+      let csv = '실적 체크 통계 (통관번호+몰 기준 고객 수)\n';
       csv += '조회 기간: ' + (useDateFilter ? (startDate + ' ~ ' + endDate) : '전체') + '\n';
       csv += '상담사 필터: ' + (accountFilter === '전체' ? '전체' : accountFilter.replace('@ubase.co.kr', '')) + '\n';
       csv += '생성일시: ' + new Date().toLocaleString('ko-KR') + '\n\n';
-      csv += '상담사,유선안내완료 고객 수(명),유선안내완료 접수건 수(건),환불→교환 전환 건수(건)\n';
+      csv += '상담사,최종 인센티브 산정(원),유선안내완료 고객 수(명),유선안내완료 접수건 수(건),환불→교환 전환 건수(건)\n';
+
+      const CUSTOMER_INCENTIVE_RATE = 1000;
+      const CONVERSION_INCENTIVE_RATE = 2000;
 
       performanceStatsData.forEach(stat => {
-        csv += stat.account.replace('@ubase.co.kr', '') + ',' + stat.completeCustomerCount + ',' + stat.completeCount + ',' + stat.refundToExchangeCount + '\n';
+        const totalIncentive = (stat.completeCustomerCount * CUSTOMER_INCENTIVE_RATE) + (stat.refundToExchangeCount * CONVERSION_INCENTIVE_RATE);
+        csv += stat.account.replace('@ubase.co.kr', '') + ',' + totalIncentive + ',' + stat.completeCustomerCount + ',' + stat.completeCount + ',' + stat.refundToExchangeCount + '\n';
       });
 
       // 합계
       const totalCustomers = new Set();
       let totalCount = 0;
       let totalRefundToExchange = 0;
+      let totalIncentive = 0;
       performanceStatsData.forEach(stat => {
         stat.completeCustomers.forEach(id => totalCustomers.add(id));
         totalCount += stat.completeCount;
         totalRefundToExchange += stat.refundToExchangeCount;
+        totalIncentive += (stat.completeCustomerCount * CUSTOMER_INCENTIVE_RATE) + (stat.refundToExchangeCount * CONVERSION_INCENTIVE_RATE);
       });
-      csv += '합계,' + totalCustomers.size + ',' + totalCount + ',' + totalRefundToExchange + '\n';
+      csv += '합계,' + totalIncentive + ',' + totalCustomers.size + ',' + totalCount + ',' + totalRefundToExchange + '\n';
 
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
