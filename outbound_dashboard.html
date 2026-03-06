@@ -34,6 +34,7 @@
     .stats-table tr:hover { background: #f9f9f9; }
     .stats-table .text-left { text-align: left; }
     .stats-table .number { font-weight: 600; color: #333; }
+    .stats-table .cell-flag { text-align: center; font-weight: 600; }
     .distribution-section { margin-top: 24px; }
     .distribution-card {
       background: #f9f9f9;
@@ -411,12 +412,17 @@
     <div id="tab-agent-detail" class="dashboard-tab-content">
     <div class="dashboard-section">
       <div class="dashboard-card">
-        <h3 class="card-group-title">상담원별 배정 데이터 조회</h3>
-        <p class="hint">상담원을 선택하고 상태를 선택하면 해당 상담원이 배정된 데이터를 필터링하여 조회합니다.</p>
+        <h3 class="card-group-title">상담원 상세 관리</h3>
+        <p class="hint">일자, 상담원, 상태를 선택하여 배정된 데이터를 조회하고 전체적인 수치를 확인할 수 있습니다. (접수일 기준) 비워두면 전체 조회.</p>
         <div class="toolbar">
-          <label>상담원:</label>
+          <label><input type="checkbox" id="agentDetailDateAll" checked> 전체</label>
+          <label style="margin-left:8px;">일자:</label>
+          <input type="date" id="agentDetailStartDate" value="" disabled>
+          <span>~</span>
+          <input type="date" id="agentDetailEndDate" value="" disabled>
+          <label style="margin-left: 12px;">상담원:</label>
           <select id="agentDetailAccountSelect">
-            <option value="">선택하세요</option>
+            <option value="">전체</option>
             <option value="cs1@ubase.co.kr">cs1</option>
             <option value="cs2@ubase.co.kr">cs2</option>
             <option value="cs3@ubase.co.kr">cs3</option>
@@ -429,11 +435,15 @@
             <option value="cs10@ubase.co.kr">cs10</option>
           </select>
           <label style="margin-left: 12px;">상태:</label>
-          <button type="button" class="agent-filter-btn" data-filter="callIncomplete" style="background: #6c757d; color: #fff;">유선안내 미완료</button>
-          <button type="button" class="agent-filter-btn" data-filter="callComplete" style="background: #28a745; color: #fff;">유선안내완료</button>
-          <button type="button" class="agent-filter-btn" data-filter="finalUnreached" style="background: #dc3545; color: #fff;">최종미연결</button>
-          <button type="button" class="agent-filter-btn" data-filter="postProcessing" style="background: #ffc107; color: #333;">후처리관리중</button>
-          <button type="button" class="agent-filter-btn" data-filter="all" style="background: #17a; color: #fff;">전체</button>
+          <select id="agentDetailFilterSelect">
+            <option value="all">전체</option>
+            <option value="noCallComplete">유선안내 미완료 (해야 할 일)</option>
+            <option value="callComplete">유선안내완료</option>
+            <option value="finalUnreached">최종미연결</option>
+            <option value="postProcessing">후처리관리중</option>
+            <option value="proofError">증빙오류(반려)</option>
+            <option value="noRefundExchange">환불·교환 미체크</option>
+          </select>
           <button type="button" id="loadAgentDetailBtn" style="background: #17a; color: #fff;">조회</button>
         </div>
         <div id="agentDetailLoading" class="loading" style="display: none;">조회 중…</div>
@@ -2545,49 +2555,56 @@
       });
     });
 
-    // 상담원 상세 관리: 필터 버튼 클릭
-    let selectedAgentFilter = 'callIncomplete'; // 기본값: 유선안내 미완료 (해야할일)
-    document.querySelectorAll('.agent-filter-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.agent-filter-btn').forEach((b) => {
-          b.style.opacity = '0.6';
-          b.style.fontWeight = 'normal';
-        });
-        btn.style.opacity = '1';
-        btn.style.fontWeight = 'bold';
-        selectedAgentFilter = btn.getAttribute('data-filter');
-      });
-    });
-    // 초기 상태: 유선안내 미완료 버튼 선택 표시
-    (() => {
-      const defaultBtn = document.querySelector('.agent-filter-btn[data-filter="callIncomplete"]');
-      if (defaultBtn) {
-        defaultBtn.style.opacity = '1';
-        defaultBtn.style.fontWeight = 'bold';
+    // 상담원 상세 관리: 일자 필터 동기화
+    const agentDetailDateAll = document.getElementById('agentDetailDateAll');
+    const agentDetailStartDate = document.getElementById('agentDetailStartDate');
+    const agentDetailEndDate = document.getElementById('agentDetailEndDate');
+    function syncAgentDetailDateAll() {
+      const all = agentDetailDateAll && agentDetailDateAll.checked;
+      if (agentDetailStartDate) agentDetailStartDate.disabled = !!all;
+      if (agentDetailEndDate) agentDetailEndDate.disabled = !!all;
+      if (all) {
+        agentDetailStartDate.value = '';
+        agentDetailEndDate.value = '';
+      } else if (agentDetailStartDate && agentDetailEndDate && !agentDetailStartDate.value) {
+        const today = new Date();
+        const monthAgo = new Date(today);
+        monthAgo.setDate(monthAgo.getDate() - 30);
+        agentDetailStartDate.value = monthAgo.toISOString().split('T')[0];
+        agentDetailEndDate.value = today.toISOString().split('T')[0];
       }
-    })();
+    }
+    if (agentDetailDateAll) agentDetailDateAll.addEventListener('change', syncAgentDetailDateAll);
+    syncAgentDetailDateAll();
 
     // 상담원 상세 관리: 조회 버튼
     const agentDetailAccountSelect = document.getElementById('agentDetailAccountSelect');
+    const agentDetailFilterSelect = document.getElementById('agentDetailFilterSelect');
     const loadAgentDetailBtn = document.getElementById('loadAgentDetailBtn');
     const agentDetailLoading = document.getElementById('agentDetailLoading');
     const agentDetailResult = document.getElementById('agentDetailResult');
     
     if (loadAgentDetailBtn) {
       loadAgentDetailBtn.addEventListener('click', async () => {
-        const account = agentDetailAccountSelect ? agentDetailAccountSelect.value : '';
-        if (!account) {
-          alert('상담원을 선택해주세요.');
-          return;
-        }
-        await loadAgentDetail(account, selectedAgentFilter);
+        await loadAgentDetail();
       });
     }
 
     // 상담원 상세 관리: 데이터 조회
-    async function loadAgentDetail(account, filter) {
+    async function loadAgentDetail() {
       if (!db) {
         agentDetailResult.innerHTML = '<div class="msg error">Firebase가 초기화되지 않았습니다.</div>';
+        return;
+      }
+
+      const useDateFilter = !(agentDetailDateAll && agentDetailDateAll.checked);
+      const startDate = agentDetailStartDate ? agentDetailStartDate.value : '';
+      const endDate = agentDetailEndDate ? agentDetailEndDate.value : '';
+      const selectedAccount = agentDetailAccountSelect ? agentDetailAccountSelect.value : '';
+      const selectedFilter = agentDetailFilterSelect ? agentDetailFilterSelect.value : 'all';
+
+      if (useDateFilter && (!startDate || !endDate)) {
+        agentDetailResult.innerHTML = '<div class="msg error">전체가 아닐 경우 일자를 선택해주세요.</div>';
         return;
       }
 
@@ -2595,20 +2612,15 @@
       agentDetailResult.innerHTML = '';
 
       try {
-        // 분배 이력 최신 데이터 로드
+        let startTime = 0, endTime = Number.MAX_SAFE_INTEGER;
+        if (useDateFilter && startDate && endDate) {
+          startTime = new Date(startDate + 'T00:00:00').getTime();
+          endTime = new Date(endDate + 'T23:59:59').getTime();
+        }
+
+        // 분배 이력 및 처리 이력 로드
         distributionHistoryMap = await loadDistributionHistoryFromFirebase();
         await loadProcessingAndCounselingFromFirebase();
-        const latestDistributionMap = new Map();
-        
-        // 분배 이력에서 해당 상담원이 배정된 건만 찾기
-        distributionHistoryMap.forEach((history, key) => {
-          if (Array.isArray(history) && history.length > 0) {
-            const latest = history[history.length - 1];
-            if (latest.account && latest.account.toLowerCase() === account.toLowerCase()) {
-              latestDistributionMap.set(key, latest);
-            }
-          }
-        });
 
         // 전체 접수건 로드
         const allItems = [];
@@ -2618,21 +2630,41 @@
             snap.forEach((dateSnap) => {
               const dateKey = dateSnap.key;
               if (!/^\d{8}$/.test(dateKey)) return;
-              dateSnap.forEach((inner) => {
-                const item = inner.val();
-                allItems.push({
-                  ...item,
-                  _prefix: prefix,
-                  id: inner.key,
-                  _dateKey: dateKey
+              const y = dateKey.substring(0, 4), m = dateKey.substring(4, 6), d = dateKey.substring(6, 8);
+              const itemDate = new Date(y + '-' + m + '-' + d + 'T00:00:00').getTime();
+              if (itemDate >= startTime && itemDate <= endTime) {
+                dateSnap.forEach((inner) => {
+                  const item = inner.val();
+                  allItems.push({
+                    ...item,
+                    _prefix: prefix,
+                    id: inner.key,
+                    _dateKey: dateKey
+                  });
                 });
-              });
+              }
             });
           }
         }
 
-        // 필터링: 해당 상담원이 배정된 건만
-        const filteredItems = [];
+        // 분배 이력에서 배정된 건만 필터링
+        const assignedItems = [];
+        const latestDistributionMap = new Map();
+        
+        distributionHistoryMap.forEach((history, key) => {
+          if (Array.isArray(history) && history.length > 0) {
+            const latest = history[history.length - 1];
+            if (latest.account) {
+              // 상담원 필터 적용
+              if (selectedAccount && latest.account.toLowerCase() !== selectedAccount.toLowerCase()) {
+                return;
+              }
+              latestDistributionMap.set(key, latest);
+            }
+          }
+        });
+
+        // 배정된 건과 접수건 매칭
         latestDistributionMap.forEach((entry, key) => {
           const item = allItems.find(it => `${it._prefix}_${it._dateKey}_${it.id}` === key);
           if (!item) return;
@@ -2641,67 +2673,252 @@
           const isCallComplete = ph.length > 0 ? isCallCompleteForKey(ph) : (!!item.callComplete);
           const isFinalUnreached = ph.length > 0 ? isFinalUnreachedForKey(ph) : false;
           const isPostProcessing = ph.length > 0 ? isPostProcessingForKey(ph) : false;
+          const isProofError = !!item.proofError;
+          const isNoRefundExchange = !item.refundDone && !item.exchangeDone;
 
-          // 필터 적용
-          if (filter === 'callIncomplete') {
-            // 유선안내 미완료: 유선안내완료가 체크되지 않은 건만
-            if (isCallComplete) return;
-          } else if (filter === 'callComplete') {
-            // 유선안내완료: 유선안내완료 체크되었지만 최종미연결이 아닌 건만
-            if (!isCallComplete || isFinalUnreached) return;
-          } else if (filter === 'finalUnreached') {
-            // 최종미연결: 최종미연결 체크된 건만 (유선안내완료이면서 최종미연결인 건도 포함)
-            if (!isFinalUnreached) return;
-          } else if (filter === 'postProcessing') {
-            // 후처리관리중: 후처리관리중 체크된 건만
-            if (!isPostProcessing) return;
-          } else if (filter === 'all' || filter === '') {
-            // 전체는 모든 배정된 건 표시
+          // 상태 필터 적용
+          let shouldInclude = true;
+          if (selectedFilter === 'noCallComplete') {
+            shouldInclude = !isCallComplete;
+          } else if (selectedFilter === 'callComplete') {
+            shouldInclude = isCallComplete && !isFinalUnreached;
+          } else if (selectedFilter === 'finalUnreached') {
+            shouldInclude = isFinalUnreached;
+          } else if (selectedFilter === 'postProcessing') {
+            shouldInclude = isPostProcessing;
+          } else if (selectedFilter === 'proofError') {
+            shouldInclude = isProofError;
+          } else if (selectedFilter === 'noRefundExchange') {
+            shouldInclude = isNoRefundExchange;
+          } else if (selectedFilter === 'all') {
+            shouldInclude = true;
           }
 
-          filteredItems.push({
-            ...item,
-            _key: key,
-            _isCallComplete: isCallComplete,
-            _isFinalUnreached: isFinalUnreached,
-            _isPostProcessing: isPostProcessing
-          });
+          if (shouldInclude) {
+            assignedItems.push({
+              ...item,
+              _key: key,
+              _account: entry.account,
+              _isCallComplete: isCallComplete,
+              _isFinalUnreached: isFinalUnreached,
+              _isPostProcessing: isPostProcessing,
+              _isProofError: isProofError,
+              _isNoRefundExchange: isNoRefundExchange
+            });
+          }
         });
+
+        // 통계 요약 계산
+        const statsByAccount = {};
+        const statsByDate = {};
+        
+        assignedItems.forEach(item => {
+          const account = item._account;
+          const dateKey = item._dateKey;
+          
+          // 상담원별 통계
+          if (!statsByAccount[account]) {
+            statsByAccount[account] = {
+              account: account,
+              total: 0,
+              callComplete: 0,
+              callIncomplete: 0,
+              finalUnreached: 0,
+              postProcessing: 0,
+              proofError: 0,
+              noRefundExchange: 0
+            };
+          }
+          const accStat = statsByAccount[account];
+          accStat.total++;
+          if (item._isCallComplete) accStat.callComplete++;
+          else accStat.callIncomplete++;
+          if (item._isFinalUnreached) accStat.finalUnreached++;
+          if (item._isPostProcessing) accStat.postProcessing++;
+          if (item._isProofError) accStat.proofError++;
+          if (item._isNoRefundExchange) accStat.noRefundExchange++;
+
+          // 일자별 통계
+          if (!statsByDate[dateKey]) {
+            statsByDate[dateKey] = {
+              dateKey: dateKey,
+              total: 0,
+              callComplete: 0,
+              callIncomplete: 0,
+              finalUnreached: 0,
+              postProcessing: 0,
+              proofError: 0,
+              noRefundExchange: 0
+            };
+          }
+          const dateStat = statsByDate[dateKey];
+          dateStat.total++;
+          if (item._isCallComplete) dateStat.callComplete++;
+          else dateStat.callIncomplete++;
+          if (item._isFinalUnreached) dateStat.finalUnreached++;
+          if (item._isPostProcessing) dateStat.postProcessing++;
+          if (item._isProofError) dateStat.proofError++;
+          if (item._isNoRefundExchange) dateStat.noRefundExchange++;
+        });
+
+        // 전체 통계
+        const totalStats = {
+          total: assignedItems.length,
+          callComplete: assignedItems.filter(i => i._isCallComplete).length,
+          callIncomplete: assignedItems.filter(i => !i._isCallComplete).length,
+          finalUnreached: assignedItems.filter(i => i._isFinalUnreached).length,
+          postProcessing: assignedItems.filter(i => i._isPostProcessing).length,
+          proofError: assignedItems.filter(i => i._isProofError).length,
+          noRefundExchange: assignedItems.filter(i => i._isNoRefundExchange).length
+        };
 
         // 결과 표시
-        if (filteredItems.length === 0) {
-          agentDetailResult.innerHTML = '<div class="msg info">조회된 데이터가 없습니다.</div>';
-          agentDetailLoading.style.display = 'none';
-          return;
+        const rangeLabel = useDateFilter && startDate && endDate ? (' (' + startDate + ' ~ ' + endDate + ')') : ' (전체)';
+        const accountLabel = selectedAccount ? (' - ' + selectedAccount.replace('@ubase.co.kr', '')) : '';
+        const filterLabels = {
+          all: '전체',
+          noCallComplete: '유선안내 미완료',
+          callComplete: '유선안내완료',
+          finalUnreached: '최종미연결',
+          postProcessing: '후처리관리중',
+          proofError: '증빙오류(반려)',
+          noRefundExchange: '환불·교환 미체크'
+        };
+        const filterLabel = filterLabels[selectedFilter] || '전체';
+
+        let html = '';
+
+        // 통계 요약 섹션
+        html += '<div class="stats-summary" style="margin-bottom: 20px;">';
+        html += '<div class="stats-summary-item" style="background: #e3f2fd; border-left-color: #2196f3;">';
+        html += '<div>전체 배정 건수</div>';
+        html += '<strong>' + totalStats.total + '건</strong>';
+        html += '</div>';
+        html += '<div class="stats-summary-item" style="background: #e8f5e9; border-left-color: #4caf50;">';
+        html += '<div>유선안내완료</div>';
+        html += '<strong>' + totalStats.callComplete + '건</strong>';
+        html += '</div>';
+        html += '<div class="stats-summary-item" style="background: #fff3e0; border-left-color: #ff9800;">';
+        html += '<div>유선안내 미완료</div>';
+        html += '<strong>' + totalStats.callIncomplete + '건</strong>';
+        html += '</div>';
+        html += '<div class="stats-summary-item" style="background: #ffebee; border-left-color: #f44336;">';
+        html += '<div>최종미연결</div>';
+        html += '<strong>' + totalStats.finalUnreached + '건</strong>';
+        html += '</div>';
+        html += '<div class="stats-summary-item" style="background: #fff9c4; border-left-color: #fbc02d;">';
+        html += '<div>후처리관리중</div>';
+        html += '<strong>' + totalStats.postProcessing + '건</strong>';
+        html += '</div>';
+        html += '<div class="stats-summary-item" style="background: #fce4ec; border-left-color: #e91e63;">';
+        html += '<div>증빙오류(반려)</div>';
+        html += '<strong>' + totalStats.proofError + '건</strong>';
+        html += '</div>';
+        html += '<div class="stats-summary-item" style="background: #e1f5fe; border-left-color: #03a9f4;">';
+        html += '<div>환불·교환 미체크</div>';
+        html += '<strong>' + totalStats.noRefundExchange + '건</strong>';
+        html += '</div>';
+        html += '</div>';
+
+        // 상담원별 통계 테이블
+        if (Object.keys(statsByAccount).length > 0) {
+          html += '<h4 style="margin-top: 24px; margin-bottom: 12px; font-size: 14px; color: #333;">상담원별 통계 요약</h4>';
+          html += '<table class="stats-table" style="margin-bottom: 24px;">';
+          html += '<thead><tr>';
+          html += '<th>상담원</th>';
+          html += '<th>전체</th><th>유선안내완료</th><th>유선안내 미완료</th>';
+          html += '<th>최종미연결</th><th>후처리관리중</th>';
+          html += '<th>증빙오류</th><th>환불·교환 미체크</th>';
+          html += '</tr></thead><tbody>';
+          
+          Object.keys(statsByAccount).sort().forEach(account => {
+            const stat = statsByAccount[account];
+            html += '<tr>';
+            html += '<td class="text-left">' + escapeHtml(stat.account.replace('@ubase.co.kr', '')) + '</td>';
+            html += '<td class="number">' + stat.total + '</td>';
+            html += '<td class="number" style="color: #4caf50;">' + stat.callComplete + '</td>';
+            html += '<td class="number" style="color: #ff9800;">' + stat.callIncomplete + '</td>';
+            html += '<td class="number" style="color: #f44336;">' + stat.finalUnreached + '</td>';
+            html += '<td class="number" style="color: #fbc02d;">' + stat.postProcessing + '</td>';
+            html += '<td class="number" style="color: #e91e63;">' + stat.proofError + '</td>';
+            html += '<td class="number" style="color: #03a9f4;">' + stat.noRefundExchange + '</td>';
+            html += '</tr>';
+          });
+          
+          html += '</tbody></table>';
         }
 
-        const filterLabel = filter === 'all' ? '전체' : 
-          (filter === 'callIncomplete' ? '유선안내 미완료' : 
-          (filter === 'callComplete' ? '유선안내완료' : 
-          (filter === 'finalUnreached' ? '최종미연결' : 
-          (filter === 'postProcessing' ? '후처리관리중' : '전체'))));
-        let html = '<table class="stats-table" style="margin-top: 12px;">';
-        html += '<caption style="caption-side:top;text-align:left;font-weight:600;margin-bottom:8px;">' + account.replace('@ubase.co.kr', '') + ' 배정 데이터 (' + filterLabel + ') - 총 ' + filteredItems.length + '건</caption>';
-        html += '<thead><tr>';
-        html += '<th>접수ID</th><th>이름</th><th>연락처</th><th>접수일</th>';
-        html += '<th>유선안내완료</th><th>최종미연결</th><th>후처리관리중</th>';
-        html += '</tr></thead><tbody>';
+        // 일자별 통계 테이블
+        if (Object.keys(statsByDate).length > 0) {
+          html += '<h4 style="margin-top: 24px; margin-bottom: 12px; font-size: 14px; color: #333;">일자별 통계 요약</h4>';
+          html += '<table class="stats-table" style="margin-bottom: 24px;">';
+          html += '<thead><tr>';
+          html += '<th>일자</th>';
+          html += '<th>전체</th><th>유선안내완료</th><th>유선안내 미완료</th>';
+          html += '<th>최종미연결</th><th>후처리관리중</th>';
+          html += '<th>증빙오류</th><th>환불·교환 미체크</th>';
+          html += '</tr></thead><tbody>';
+          
+          Object.keys(statsByDate).sort().reverse().forEach(dateKey => {
+            const stat = statsByDate[dateKey];
+            const y = dateKey.substring(0, 4), m = dateKey.substring(4, 6), d = dateKey.substring(6, 8);
+            const dateStr = y + '-' + m + '-' + d;
+            html += '<tr>';
+            html += '<td>' + dateStr + '</td>';
+            html += '<td class="number">' + stat.total + '</td>';
+            html += '<td class="number" style="color: #4caf50;">' + stat.callComplete + '</td>';
+            html += '<td class="number" style="color: #ff9800;">' + stat.callIncomplete + '</td>';
+            html += '<td class="number" style="color: #f44336;">' + stat.finalUnreached + '</td>';
+            html += '<td class="number" style="color: #fbc02d;">' + stat.postProcessing + '</td>';
+            html += '<td class="number" style="color: #e91e63;">' + stat.proofError + '</td>';
+            html += '<td class="number" style="color: #03a9f4;">' + stat.noRefundExchange + '</td>';
+            html += '</tr>';
+          });
+          
+          html += '</tbody></table>';
+        }
 
-        filteredItems.forEach(item => {
-          const y = item._dateKey.substring(0, 4), m = item._dateKey.substring(4, 6), d = item._dateKey.substring(6, 8);
-          const dateStr = y + '-' + m + '-' + d;
-          html += '<tr>';
-          html += '<td>' + escapeHtml(item.id || '-') + '</td>';
-          html += '<td>' + escapeHtml(item.name || '-') + '</td>';
-          html += '<td>' + escapeHtml(item.contact || '-') + '</td>';
-          html += '<td>' + dateStr + '</td>';
-          html += '<td class="cell-flag">' + (item._isCallComplete ? 'Y' : '-') + '</td>';
-          html += '<td class="cell-flag">' + (item._isFinalUnreached ? 'Y' : '-') + '</td>';
-          html += '<td class="cell-flag">' + (item._isPostProcessing ? 'Y' : '-') + '</td>';
-          html += '</tr>';
-        });
+        // 상세 데이터 테이블
+        if (assignedItems.length > 0) {
+          html += '<h4 style="margin-top: 24px; margin-bottom: 12px; font-size: 14px; color: #333;">상세 데이터 (' + filterLabel + rangeLabel + accountLabel + ') - 총 ' + assignedItems.length + '건</h4>';
+          html += '<table class="stats-table" style="margin-top: 12px;">';
+          html += '<thead><tr>';
+          html += '<th>일자</th><th>상담원</th><th>접수ID</th><th>이름</th><th>연락처</th>';
+          html += '<th>프로젝트</th>';
+          html += '<th>유선안내완료</th><th>최종미연결</th><th>후처리관리중</th>';
+          html += '<th>증빙오류</th><th>환불·교환 미체크</th>';
+          html += '</tr></thead><tbody>';
 
-        html += '</tbody></table>';
+          // 일자 내림차순, 상담원 오름차순으로 정렬
+          assignedItems.sort((a, b) => {
+            if (b._dateKey !== a._dateKey) return b._dateKey.localeCompare(a._dateKey);
+            return a._account.localeCompare(b._account);
+          });
+
+          assignedItems.forEach(item => {
+            const y = item._dateKey.substring(0, 4), m = item._dateKey.substring(4, 6), d = item._dateKey.substring(6, 8);
+            const dateStr = y + '-' + m + '-' + d;
+            const projectLabel = PROJECT_LABELS[PREFIXES.indexOf(item._prefix)] || item._prefix;
+            html += '<tr>';
+            html += '<td>' + dateStr + '</td>';
+            html += '<td class="text-left">' + escapeHtml(item._account.replace('@ubase.co.kr', '')) + '</td>';
+            html += '<td>' + escapeHtml(item.id || '-') + '</td>';
+            html += '<td>' + escapeHtml(item.name || '-') + '</td>';
+            html += '<td>' + escapeHtml(item.contact || '-') + '</td>';
+            html += '<td>' + escapeHtml(projectLabel) + '</td>';
+            html += '<td class="cell-flag">' + (item._isCallComplete ? 'Y' : '-') + '</td>';
+            html += '<td class="cell-flag">' + (item._isFinalUnreached ? 'Y' : '-') + '</td>';
+            html += '<td class="cell-flag">' + (item._isPostProcessing ? 'Y' : '-') + '</td>';
+            html += '<td class="cell-flag">' + (item._isProofError ? 'Y' : '-') + '</td>';
+            html += '<td class="cell-flag">' + (item._isNoRefundExchange ? 'Y' : '-') + '</td>';
+            html += '</tr>';
+          });
+
+          html += '</tbody></table>';
+        } else {
+          html += '<div class="msg info">조회된 데이터가 없습니다.</div>';
+        }
+
         agentDetailResult.innerHTML = html;
       } catch (err) {
         agentDetailResult.innerHTML = '<div class="msg error">조회 실패: ' + escapeHtml(err.message || err) + '</div>';
