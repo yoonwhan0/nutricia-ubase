@@ -1246,15 +1246,15 @@
       const flagsEl = document.getElementById('detailModalFlags');
       titleEl.textContent = '고객 상세 · 사진 보기 — ' + (d.name || d.contact || d.id || '');
 
-      // 1. 고객 정보
+      // 1. 고객 정보 (편집 가능)
       let infoHtml = '<div class="info-section"><h3>고객 정보</h3><div class="info-grid">';
-      infoHtml += '<div class="info-row"><strong>이름</strong> ' + escapeHtml(d.name || '-') + '</div>';
-      infoHtml += '<div class="info-row"><strong>연락처</strong> ' + escapeHtml(d.contact || '-') + '</div>';
-      infoHtml += '<div class="info-row"><strong>주소</strong> ' + escapeHtml((d.address || '-') + ' ' + (d.addressDetail || '')) + '</div>';
-      infoHtml += '<div class="info-row"><strong>개인통관부호</strong> ' + escapeHtml(d.customsCode || '-') + '</div>';
-      infoHtml += '<div class="info-row"><strong>은행</strong> ' + escapeHtml(d.bankName || '-') + '</div>';
-      infoHtml += '<div class="info-row"><strong>계좌번호</strong> ' + escapeHtml(d.bankAccountNumber || '-') + '</div>';
-      infoHtml += '<div class="info-row"><strong>계좌명</strong> ' + escapeHtml(d.bankAccountName || '-') + '</div>';
+      infoHtml += '<div class="info-row"><strong>이름</strong> <input type="text" id="dm-customer-name" class="dm-customer-field" value="' + escapeAttr(d.name || '') + '" placeholder="이름" style="width:100%;padding:4px;font-size:13px;"></div>';
+      infoHtml += '<div class="info-row"><strong>연락처</strong> <input type="text" id="dm-customer-contact" class="dm-customer-field" value="' + escapeAttr(d.contact || '') + '" placeholder="연락처" style="width:100%;padding:4px;font-size:13px;"></div>';
+      infoHtml += '<div class="info-row"><strong>주소</strong> <input type="text" id="dm-customer-address" class="dm-customer-field" value="' + escapeAttr((d.address || '') + (d.addressDetail ? ' ' + d.addressDetail : '')) + '" placeholder="주소" style="width:100%;padding:4px;font-size:13px;"></div>';
+      infoHtml += '<div class="info-row"><strong>개인통관부호</strong> <input type="text" id="dm-customer-customs" class="dm-customer-field" value="' + escapeAttr(d.customsCode || '') + '" placeholder="개인통관부호" style="width:100%;padding:4px;font-size:13px;"></div>';
+      infoHtml += '<div class="info-row"><strong>은행</strong> <input type="text" id="dm-customer-bank" class="dm-customer-field" value="' + escapeAttr(d.bankName || '') + '" placeholder="은행" style="width:100%;padding:4px;font-size:13px;"></div>';
+      infoHtml += '<div class="info-row"><strong>계좌번호</strong> <input type="text" id="dm-customer-account" class="dm-customer-field" value="' + escapeAttr(d.bankAccountNumber || '') + '" placeholder="계좌번호" style="width:100%;padding:4px;font-size:13px;"></div>';
+      infoHtml += '<div class="info-row"><strong>계좌명</strong> <input type="text" id="dm-customer-account-name" class="dm-customer-field" value="' + escapeAttr(d.bankAccountName || '') + '" placeholder="계좌명" style="width:100%;padding:4px;font-size:13px;"></div>';
       infoHtml += '<div class="info-row"><strong>접수ID</strong> ' + escapeHtml(d.id || '-') + '</div>';
       infoHtml += '<div class="info-row"><strong>접수일시</strong> ' + formatDate(d.createdAt) + '</div>';
       infoHtml += '</div></div>';
@@ -1568,6 +1568,15 @@
         const finalUnreached = !!cbFinalUnreached?.checked;
         const postProcessing = !!cbPostProcessing?.checked;
         
+        // 고객 정보 필드 읽기
+        const customerName = (document.getElementById('dm-customer-name')?.value || '').trim();
+        const customerContact = (document.getElementById('dm-customer-contact')?.value || '').trim();
+        const customerAddress = (document.getElementById('dm-customer-address')?.value || '').trim();
+        const customerCustoms = (document.getElementById('dm-customer-customs')?.value || '').trim();
+        const customerBank = (document.getElementById('dm-customer-bank')?.value || '').trim();
+        const customerAccount = (document.getElementById('dm-customer-account')?.value || '').trim();
+        const customerAccountName = (document.getElementById('dm-customer-account-name')?.value || '').trim();
+        
         const d = currentDetailData;
         if (!d || !db) return;
         const id = d.id;
@@ -1583,17 +1592,76 @@
           invalidInfo: d.invalidInfo || false,
           callComplete: (d._effectiveCallComplete !== undefined ? d._effectiveCallComplete : d.callComplete) || false,
           finalUnreached: (d._effectiveFinalUnreached !== undefined ? d._effectiveFinalUnreached : d.finalUnreached) || false,
-          postProcessing: (d._effectivePostProcessing !== undefined ? d._effectivePostProcessing : d.postProcessing) || false
+          postProcessing: (d._effectivePostProcessing !== undefined ? d._effectivePostProcessing : d.postProcessing) || false,
+          name: d.name || '',
+          contact: d.contact || '',
+          address: d.address || '',
+          addressDetail: d.addressDetail || '',
+          customsCode: d.customsCode || '',
+          bankName: d.bankName || '',
+          bankAccountNumber: d.bankAccountNumber || '',
+          bankAccountName: d.bankAccountName || ''
         };
         
         const newValues = { refundDone, exchangeDone, invalidInfo, callComplete, finalUnreached, postProcessing };
+        const customerChanges = {};
         const changes = [];
+        
+        // 고객 정보 변경사항 확인
+        if (oldValues.name !== customerName) {
+          newValues.name = customerName;
+          customerChanges.name = customerName;
+        }
+        if (oldValues.contact !== customerContact) {
+          newValues.contact = customerContact;
+          customerChanges.contact = customerContact;
+        }
+        // 주소는 전체를 address에 저장하고, addressDetail은 빈 문자열로 설정 (단순화)
+        // 필요시 나중에 주소 파싱 로직 추가 가능
+        const trimmedAddress = customerAddress.trim();
+        if (oldValues.address !== trimmedAddress || oldValues.addressDetail !== '') {
+          newValues.address = trimmedAddress;
+          newValues.addressDetail = '';
+          customerChanges.address = trimmedAddress;
+          customerChanges.addressDetail = '';
+        }
+        if (oldValues.customsCode !== customerCustoms) {
+          newValues.customsCode = customerCustoms;
+          customerChanges.customsCode = customerCustoms;
+        }
+        if (oldValues.bankName !== customerBank) {
+          newValues.bankName = customerBank;
+          customerChanges.bankName = customerBank;
+        }
+        if (oldValues.bankAccountNumber !== customerAccount) {
+          newValues.bankAccountNumber = customerAccount;
+          customerChanges.bankAccountNumber = customerAccount;
+        }
+        if (oldValues.bankAccountName !== customerAccountName) {
+          newValues.bankAccountName = customerAccountName;
+          customerChanges.bankAccountName = customerAccountName;
+        }
+        
+        // 체크박스 변경사항 확인
         if (oldValues.refundDone !== newValues.refundDone) changes.push('환불: ' + (newValues.refundDone ? '체크' : '해제'));
         if (oldValues.exchangeDone !== newValues.exchangeDone) changes.push('교환: ' + (newValues.exchangeDone ? '체크' : '해제'));
         if (oldValues.invalidInfo !== newValues.invalidInfo) changes.push('잘못된정보: ' + (newValues.invalidInfo ? '체크' : '해제'));
         if (oldValues.callComplete !== newValues.callComplete) changes.push('유선안내완료: ' + (newValues.callComplete ? '체크' : '해제'));
         if (oldValues.finalUnreached !== newValues.finalUnreached) changes.push('최종미연결: ' + (newValues.finalUnreached ? '체크' : '해제'));
         if (oldValues.postProcessing !== newValues.postProcessing) changes.push('후처리관리중: ' + (newValues.postProcessing ? '체크' : '해제'));
+        
+        // 고객 정보 변경사항 기록
+        const customerChangeList = [];
+        if (customerChanges.name !== undefined) customerChangeList.push('이름 수정');
+        if (customerChanges.contact !== undefined) customerChangeList.push('연락처 수정');
+        if (customerChanges.address !== undefined || customerChanges.addressDetail !== undefined) customerChangeList.push('주소 수정');
+        if (customerChanges.customsCode !== undefined) customerChangeList.push('개인통관부호 수정');
+        if (customerChanges.bankName !== undefined) customerChangeList.push('은행 수정');
+        if (customerChanges.bankAccountNumber !== undefined) customerChangeList.push('계좌번호 수정');
+        if (customerChanges.bankAccountName !== undefined) customerChangeList.push('계좌명 수정');
+        if (customerChangeList.length > 0) {
+          changes.push('고객정보: ' + customerChangeList.join(', '));
+        }
         
         const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
         const metaPath = dateKey ? (prefix + '/submissions_meta/' + dateKey + '/' + id) : '';
@@ -1618,6 +1686,15 @@
             it.callComplete = newValues.callComplete;
             it.finalUnreached = newValues.finalUnreached;
             it.postProcessing = newValues.postProcessing;
+            // 고객 정보도 업데이트
+            if (newValues.name !== undefined) it.name = newValues.name;
+            if (newValues.contact !== undefined) it.contact = newValues.contact;
+            if (newValues.address !== undefined) it.address = newValues.address;
+            if (newValues.addressDetail !== undefined) it.addressDetail = newValues.addressDetail;
+            if (newValues.customsCode !== undefined) it.customsCode = newValues.customsCode;
+            if (newValues.bankName !== undefined) it.bankName = newValues.bankName;
+            if (newValues.bankAccountNumber !== undefined) it.bankAccountNumber = newValues.bankAccountNumber;
+            if (newValues.bankAccountName !== undefined) it.bankAccountName = newValues.bankAccountName;
           }
           
           await loadProcessingHistoryFromFirebase();
