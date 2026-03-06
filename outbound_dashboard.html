@@ -413,7 +413,7 @@
     <div class="dashboard-section">
       <div class="dashboard-card">
         <h3 class="card-group-title">상담원 상세 관리</h3>
-        <p class="hint">일자, 상담원, 상태를 선택하여 배정된 데이터를 조회하고 전체적인 수치를 확인할 수 있습니다. (접수일 기준) 비워두면 전체 조회.</p>
+        <p class="hint">일자, 상담원, 상태를 선택하여 배정된 데이터를 조회하고 전체적인 수치를 확인할 수 있습니다. (배정/처리 날짜 기준) 비워두면 전체 조회.</p>
         <div class="toolbar">
           <label><input type="checkbox" id="agentDetailDateAll" checked> 전체</label>
           <label style="margin-left:8px;">일자:</label>
@@ -2622,7 +2622,7 @@
         distributionHistoryMap = await loadDistributionHistoryFromFirebase();
         await loadProcessingAndCounselingFromFirebase();
 
-        // 전체 접수건 로드
+        // 전체 접수건 로드 (일자 필터는 나중에 적용)
         const allItems = [];
         for (const prefix of PREFIXES) {
           const snap = await get(dbRef(db, prefix + '/submissions_meta'));
@@ -2630,19 +2630,15 @@
             snap.forEach((dateSnap) => {
               const dateKey = dateSnap.key;
               if (!/^\d{8}$/.test(dateKey)) return;
-              const y = dateKey.substring(0, 4), m = dateKey.substring(4, 6), d = dateKey.substring(6, 8);
-              const itemDate = new Date(y + '-' + m + '-' + d + 'T00:00:00').getTime();
-              if (itemDate >= startTime && itemDate <= endTime) {
-                dateSnap.forEach((inner) => {
-                  const item = inner.val();
-                  allItems.push({
-                    ...item,
-                    _prefix: prefix,
-                    id: inner.key,
-                    _dateKey: dateKey
-                  });
+              dateSnap.forEach((inner) => {
+                const item = inner.val();
+                allItems.push({
+                  ...item,
+                  _prefix: prefix,
+                  id: inner.key,
+                  _dateKey: dateKey
                 });
-              }
+              });
             });
           }
         }
@@ -2660,18 +2656,15 @@
                 return;
               }
               
-              // 일자 필터 적용: 키에서 dateKey 추출
-              const parts = key.split('_');
-              if (parts.length >= 3) {
-                const dateKey = parts[1];
-                if (dateKey && /^\d{8}$/.test(dateKey)) {
-                  const y = dateKey.substring(0, 4), m = dateKey.substring(4, 6), d = dateKey.substring(6, 8);
-                  const itemDate = new Date(y + '-' + m + '-' + d + 'T00:00:00').getTime();
-                  if (itemDate >= startTime && itemDate <= endTime) {
-                    latestDistributionMap.set(key, latest);
-                  }
+              // 일자 필터 적용: 배정 날짜 기준 (분배 이력의 timestamp 사용)
+              if (useDateFilter) {
+                // 최신 배정 기록의 timestamp 사용
+                const assignTimestamp = latest.timestamp || 0;
+                if (assignTimestamp < startTime || assignTimestamp > endTime) {
+                  return;
                 }
               }
+              latestDistributionMap.set(key, latest);
             }
           }
         });
@@ -2687,6 +2680,28 @@
           const isPostProcessing = ph.length > 0 ? isPostProcessingForKey(ph) : false;
           const isProofError = !!item.proofError;
           const isNoRefundExchange = !item.refundDone && !item.exchangeDone;
+          
+          // 처리 날짜 확인 (유선안내완료 체크한 날짜)
+          let processedTimestamp = null;
+          if (isCallComplete && ph.length > 0) {
+            const sorted = [...ph].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            for (const h of sorted) {
+              if (h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')) {
+                processedTimestamp = h.timestamp || null;
+                break;
+              }
+            }
+          }
+          
+          // 일자 필터 적용: 배정 날짜 또는 처리 날짜 기준
+          if (useDateFilter) {
+            const assignTimestamp = entry.timestamp || 0;
+            // 처리된 건은 처리 날짜 기준, 미처리 건은 배정 날짜 기준
+            const targetTimestamp = processedTimestamp || assignTimestamp;
+            if (targetTimestamp < startTime || targetTimestamp > endTime) {
+              return;
+            }
+          }
 
           // 상태 필터 적용
           let shouldInclude = true;
@@ -2707,6 +2722,20 @@
           }
 
           if (shouldInclude) {
+            // 배정/처리 날짜 정보 추가
+            const assignTimestamp = entry.timestamp || 0;
+            let processedTimestamp = null;
+            if (isCallComplete && ph.length > 0) {
+              const sorted = [...ph].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+              for (const h of sorted) {
+                if (h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')) {
+                  processedTimestamp = h.timestamp || null;
+                  break;
+                }
+              }
+            }
+            const targetTimestamp = processedTimestamp || assignTimestamp;
+            
             assignedItems.push({
               ...item,
               _key: key,
@@ -2715,18 +2744,27 @@
               _isFinalUnreached: isFinalUnreached,
               _isPostProcessing: isPostProcessing,
               _isProofError: isProofError,
-              _isNoRefundExchange: isNoRefundExchange
+              _isNoRefundExchange: isNoRefundExchange,
+              _assignTimestamp: assignTimestamp,
+              _processedTimestamp: processedTimestamp,
+              _targetTimestamp: targetTimestamp
             });
           }
         });
 
-        // 통계 요약 계산
+        // 통계 요약 계산 (배정/처리 날짜 기준)
         const statsByAccount = {};
         const statsByDate = {};
         
         assignedItems.forEach(item => {
           const account = item._account;
-          const dateKey = item._dateKey;
+          
+          // 배정/처리 날짜 계산 (이미 assignedItems에 포함됨)
+          const targetTimestamp = item._targetTimestamp || 0;
+          const targetDate = new Date(targetTimestamp);
+          const dateKey = targetDate.getFullYear() + 
+            String(targetDate.getMonth() + 1).padStart(2, '0') + 
+            String(targetDate.getDate()).padStart(2, '0');
           
           // 상담원별 통계
           if (!statsByAccount[account]) {
@@ -2750,7 +2788,7 @@
           if (item._isProofError) accStat.proofError++;
           if (item._isNoRefundExchange) accStat.noRefundExchange++;
 
-          // 일자별 통계
+          // 일자별 통계 (배정/처리 날짜 기준)
           if (!statsByDate[dateKey]) {
             statsByDate[dateKey] = {
               dateKey: dateKey,
@@ -2901,15 +2939,20 @@
           html += '<th>증빙오류</th><th>환불·교환 미체크</th>';
           html += '</tr></thead><tbody>';
 
-          // 일자 내림차순, 상담원 오름차순으로 정렬
+          // 배정/처리 날짜 내림차순, 상담원 오름차순으로 정렬
           assignedItems.sort((a, b) => {
-            if (b._dateKey !== a._dateKey) return b._dateKey.localeCompare(a._dateKey);
+            const aTime = a._targetTimestamp || 0;
+            const bTime = b._targetTimestamp || 0;
+            if (bTime !== aTime) return bTime - aTime;
             return a._account.localeCompare(b._account);
           });
 
           assignedItems.forEach(item => {
-            const y = item._dateKey.substring(0, 4), m = item._dateKey.substring(4, 6), d = item._dateKey.substring(6, 8);
-            const dateStr = y + '-' + m + '-' + d;
+            // 배정/처리 날짜 표시
+            const targetDate = new Date(item._targetTimestamp || 0);
+            const dateStr = targetDate.getFullYear() + '-' + 
+              String(targetDate.getMonth() + 1).padStart(2, '0') + '-' + 
+              String(targetDate.getDate()).padStart(2, '0');
             const projectLabel = PROJECT_LABELS[PREFIXES.indexOf(item._prefix)] || item._prefix;
             html += '<tr>';
             html += '<td>' + dateStr + '</td>';
