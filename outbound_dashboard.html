@@ -35,6 +35,20 @@
     .stats-table .text-left { text-align: left; }
     .stats-table .number { font-weight: 600; color: #333; }
     .stats-table .cell-flag { text-align: center; font-weight: 600; }
+    /* 상담원 처리현황 테이블 스타일 */
+    .admin-table-wrapper { overflow-x: auto; margin-top: 12px; }
+    .admin-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .admin-table th, .admin-table td { border: 1px solid #ddd; padding: 2px 4px; text-align: left; vertical-align: middle; white-space: nowrap; }
+    .admin-table th { background: #f0f0f0; position: sticky; top: 0; z-index: 1; }
+    .admin-table .cell-text { display: inline-block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .admin-table .cell-seq { text-align: center; font-weight: 600; }
+    .admin-table .cell-project { text-align: center; }
+    .admin-table .cell-status { text-align: center; font-size: 10px; }
+    .admin-pagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; }
+    .admin-page-info { font-size: 12px; color: #555; }
+    .admin-page-btn { padding: 6px 12px; font-size: 12px; }
+    .row-proof-error { background: #ffebee !important; }
+    .row-no-check { background: #e3f2fd !important; }
     .distribution-section { margin-top: 24px; }
     .distribution-card {
       background: #f9f9f9;
@@ -412,8 +426,8 @@
     <div id="tab-agent-detail" class="dashboard-tab-content">
     <div class="dashboard-section">
       <div class="dashboard-card">
-        <h3 class="card-group-title">상담원 상세 관리</h3>
-        <p class="hint">일자, 상담원, 상태를 선택하여 배정된 데이터를 조회하고 전체적인 수치를 확인할 수 있습니다. (배정/처리 날짜 기준) 비워두면 전체 조회.</p>
+        <h3 class="card-group-title">상담원 처리현황</h3>
+        <p class="hint">일자, 상담원, 상태를 선택하여 배정된 데이터를 조회할 수 있습니다. (배정/처리 날짜 기준) 비워두면 전체 조회.</p>
         <div class="toolbar">
           <label><input type="checkbox" id="agentDetailDateAll" checked> 전체</label>
           <label style="margin-left:8px;">일자:</label>
@@ -437,7 +451,7 @@
           <label style="margin-left: 12px;">상태:</label>
           <select id="agentDetailFilterSelect">
             <option value="all">전체</option>
-            <option value="noCallComplete">유선안내 미완료 (해야 할 일)</option>
+            <option value="noCallComplete">유선안내 미완료</option>
             <option value="callComplete">유선안내완료</option>
             <option value="finalUnreached">최종미연결</option>
             <option value="postProcessing">후처리관리중</option>
@@ -2590,7 +2604,10 @@
       });
     }
 
-    // 상담원 상세 관리: 데이터 조회
+    // 상담원 처리현황: 데이터 조회
+    let agentDetailPaginationPage = 1;
+    const AGENT_DETAIL_PAGE_SIZE = 30;
+
     async function loadAgentDetail() {
       if (!db) {
         agentDetailResult.innerHTML = '<div class="msg error">Firebase가 초기화되지 않았습니다.</div>';
@@ -2622,7 +2639,7 @@
         distributionHistoryMap = await loadDistributionHistoryFromFirebase();
         await loadProcessingAndCounselingFromFirebase();
 
-        // 전체 접수건 로드 (일자 필터는 나중에 적용)
+        // 전체 접수건 로드
         const allItems = [];
         for (const prefix of PREFIXES) {
           const snap = await get(dbRef(db, prefix + '/submissions_meta'));
@@ -2636,7 +2653,8 @@
                   ...item,
                   _prefix: prefix,
                   id: inner.key,
-                  _dateKey: dateKey
+                  _dateKey: dateKey,
+                  _projectIndex: PREFIXES.indexOf(prefix) + 1
                 });
               });
             });
@@ -2654,15 +2672,6 @@
               // 상담원 필터 적용
               if (selectedAccount && latest.account.toLowerCase() !== selectedAccount.toLowerCase()) {
                 return;
-              }
-              
-              // 일자 필터 적용: 배정 날짜 기준 (분배 이력의 timestamp 사용)
-              if (useDateFilter) {
-                // 최신 배정 기록의 timestamp 사용
-                const assignTimestamp = latest.timestamp || 0;
-                if (assignTimestamp < startTime || assignTimestamp > endTime) {
-                  return;
-                }
               }
               latestDistributionMap.set(key, latest);
             }
@@ -2693,10 +2702,21 @@
             }
           }
           
+          // 후처리 체크 날짜 확인
+          let postProcessingTimestamp = null;
+          if (isPostProcessing && ph.length > 0) {
+            const sorted = [...ph].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            for (const h of sorted) {
+              if (h.changes && typeof h.changes === 'string' && h.changes.includes('후처리관리중: 체크')) {
+                postProcessingTimestamp = h.timestamp || null;
+                break;
+              }
+            }
+          }
+          
           // 일자 필터 적용: 배정 날짜 또는 처리 날짜 기준
           if (useDateFilter) {
             const assignTimestamp = entry.timestamp || 0;
-            // 처리된 건은 처리 날짜 기준, 미처리 건은 배정 날짜 기준
             const targetTimestamp = processedTimestamp || assignTimestamp;
             if (targetTimestamp < startTime || targetTimestamp > endTime) {
               return;
@@ -2722,18 +2742,7 @@
           }
 
           if (shouldInclude) {
-            // 배정/처리 날짜 정보 추가
             const assignTimestamp = entry.timestamp || 0;
-            let processedTimestamp = null;
-            if (isCallComplete && ph.length > 0) {
-              const sorted = [...ph].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-              for (const h of sorted) {
-                if (h.changes && typeof h.changes === 'string' && h.changes.includes('유선안내완료: 체크')) {
-                  processedTimestamp = h.timestamp || null;
-                  break;
-                }
-              }
-            }
             const targetTimestamp = processedTimestamp || assignTimestamp;
             
             assignedItems.push({
@@ -2747,71 +2756,21 @@
               _isNoRefundExchange: isNoRefundExchange,
               _assignTimestamp: assignTimestamp,
               _processedTimestamp: processedTimestamp,
+              _postProcessingTimestamp: postProcessingTimestamp,
               _targetTimestamp: targetTimestamp
             });
           }
         });
 
-        // 통계 요약 계산 (배정/처리 날짜 기준)
-        const statsByAccount = {};
-        const statsByDate = {};
-        
-        assignedItems.forEach(item => {
-          const account = item._account;
-          
-          // 배정/처리 날짜 계산 (이미 assignedItems에 포함됨)
-          const targetTimestamp = item._targetTimestamp || 0;
-          const targetDate = new Date(targetTimestamp);
-          const dateKey = targetDate.getFullYear() + 
-            String(targetDate.getMonth() + 1).padStart(2, '0') + 
-            String(targetDate.getDate()).padStart(2, '0');
-          
-          // 상담원별 통계
-          if (!statsByAccount[account]) {
-            statsByAccount[account] = {
-              account: account,
-              total: 0,
-              callComplete: 0,
-              callIncomplete: 0,
-              finalUnreached: 0,
-              postProcessing: 0,
-              proofError: 0,
-              noRefundExchange: 0
-            };
-          }
-          const accStat = statsByAccount[account];
-          accStat.total++;
-          if (item._isCallComplete) accStat.callComplete++;
-          else accStat.callIncomplete++;
-          if (item._isFinalUnreached) accStat.finalUnreached++;
-          if (item._isPostProcessing) accStat.postProcessing++;
-          if (item._isProofError) accStat.proofError++;
-          if (item._isNoRefundExchange) accStat.noRefundExchange++;
-
-          // 일자별 통계 (배정/처리 날짜 기준)
-          if (!statsByDate[dateKey]) {
-            statsByDate[dateKey] = {
-              dateKey: dateKey,
-              total: 0,
-              callComplete: 0,
-              callIncomplete: 0,
-              finalUnreached: 0,
-              postProcessing: 0,
-              proofError: 0,
-              noRefundExchange: 0
-            };
-          }
-          const dateStat = statsByDate[dateKey];
-          dateStat.total++;
-          if (item._isCallComplete) dateStat.callComplete++;
-          else dateStat.callIncomplete++;
-          if (item._isFinalUnreached) dateStat.finalUnreached++;
-          if (item._isPostProcessing) dateStat.postProcessing++;
-          if (item._isProofError) dateStat.proofError++;
-          if (item._isNoRefundExchange) dateStat.noRefundExchange++;
+        // 정렬: 배정/처리 날짜 내림차순, 상담원 오름차순
+        assignedItems.sort((a, b) => {
+          const aTime = a._targetTimestamp || 0;
+          const bTime = b._targetTimestamp || 0;
+          if (bTime !== aTime) return bTime - aTime;
+          return a._account.localeCompare(b._account);
         });
 
-        // 전체 통계
+        // 통계 계산
         const totalStats = {
           total: assignedItems.length,
           callComplete: assignedItems.filter(i => i._isCallComplete).length,
@@ -2822,9 +2781,145 @@
           noRefundExchange: assignedItems.filter(i => i._isNoRefundExchange).length
         };
 
-        // 결과 표시
-        const rangeLabel = useDateFilter && startDate && endDate ? (' (' + startDate + ' ~ ' + endDate + ')') : ' (전체)';
-        const accountLabel = selectedAccount ? (' - ' + selectedAccount.replace('@ubase.co.kr', '')) : '';
+        // 일자별 통계 계산 (배정 날짜 기준)
+        const statsByAccountAndDate = {}; // 상담원별 일자별 통계
+        const statsByDate = {}; // 전체 일자별 통계
+        
+        assignedItems.forEach(item => {
+          const account = item._account;
+          const assignTimestamp = item._assignTimestamp || 0;
+          const assignDate = new Date(assignTimestamp);
+          const assignDateKey = assignDate.getFullYear() + 
+            String(assignDate.getMonth() + 1).padStart(2, '0') + 
+            String(assignDate.getDate()).padStart(2, '0');
+          
+          // 처리 날짜 (유선안내완료, 최종미연결 체크 날짜)
+          let processDateKey = null;
+          if (item._processedTimestamp) {
+            const processDate = new Date(item._processedTimestamp);
+            processDateKey = processDate.getFullYear() + 
+              String(processDate.getMonth() + 1).padStart(2, '0') + 
+              String(processDate.getDate()).padStart(2, '0');
+          }
+          
+          // 후처리 체크 날짜
+          let postProcessingDateKey = null;
+          if (item._postProcessingTimestamp) {
+            const postProcessingDate = new Date(item._postProcessingTimestamp);
+            postProcessingDateKey = postProcessingDate.getFullYear() + 
+              String(postProcessingDate.getMonth() + 1).padStart(2, '0') + 
+              String(postProcessingDate.getDate()).padStart(2, '0');
+          }
+          
+          // 상담원별 일자별 통계 (배정 날짜 기준)
+          if (!statsByAccountAndDate[account]) {
+            statsByAccountAndDate[account] = {};
+          }
+          if (!statsByAccountAndDate[account][assignDateKey]) {
+            statsByAccountAndDate[account][assignDateKey] = {
+              assigned: 0, // 배정건수
+              callComplete: 0, // 당일 유선안내완료 체크 건수
+              finalUnreached: 0, // 당일 최종미연결 체크 건수
+              postProcessing: 0, // 당일 후처리 체크 건수
+              proofErrorAssigned: 0, // 증빙오류 배정건수
+              noRefundExchangeAssigned: 0 // 환불교환 미체크 배정건수
+            };
+          }
+          statsByAccountAndDate[account][assignDateKey].assigned++;
+          if (item._isProofError) statsByAccountAndDate[account][assignDateKey].proofErrorAssigned++;
+          if (item._isNoRefundExchange) statsByAccountAndDate[account][assignDateKey].noRefundExchangeAssigned++;
+          
+          // 처리 날짜 기준 집계 (당일 처리 건수)
+          if (processDateKey) {
+            if (!statsByAccountAndDate[account][processDateKey]) {
+              statsByAccountAndDate[account][processDateKey] = {
+                assigned: 0,
+                callComplete: 0,
+                finalUnreached: 0,
+                postProcessing: 0,
+                proofErrorAssigned: 0,
+                noRefundExchangeAssigned: 0,
+                proofErrorProcessed: 0,
+                noRefundExchangeProcessed: 0
+              };
+            }
+            if (item._isCallComplete) statsByAccountAndDate[account][processDateKey].callComplete++;
+            if (item._isFinalUnreached) statsByAccountAndDate[account][processDateKey].finalUnreached++;
+            if (item._isProofError && item._isCallComplete) statsByAccountAndDate[account][processDateKey].proofErrorProcessed++;
+            if (item._isNoRefundExchange && item._isCallComplete) statsByAccountAndDate[account][processDateKey].noRefundExchangeProcessed++;
+          }
+          
+          // 후처리 체크 날짜 기준 집계
+          if (postProcessingDateKey) {
+            if (!statsByAccountAndDate[account][postProcessingDateKey]) {
+              statsByAccountAndDate[account][postProcessingDateKey] = {
+                assigned: 0,
+                callComplete: 0,
+                finalUnreached: 0,
+                postProcessing: 0,
+                proofErrorAssigned: 0,
+                noRefundExchangeAssigned: 0,
+                proofErrorProcessed: 0,
+                noRefundExchangeProcessed: 0
+              };
+            }
+            if (item._isPostProcessing) statsByAccountAndDate[account][postProcessingDateKey].postProcessing++;
+          }
+          
+          // 전체 일자별 통계 (배정 날짜 기준)
+          if (!statsByDate[assignDateKey]) {
+            statsByDate[assignDateKey] = {
+              assigned: 0,
+              callComplete: 0,
+              finalUnreached: 0,
+              postProcessing: 0,
+              proofErrorAssigned: 0,
+              noRefundExchangeAssigned: 0
+            };
+          }
+          statsByDate[assignDateKey].assigned++;
+          if (item._isProofError) statsByDate[assignDateKey].proofErrorAssigned++;
+          if (item._isNoRefundExchange) statsByDate[assignDateKey].noRefundExchangeAssigned++;
+          
+          // 전체 일자별 통계 (처리 날짜 기준)
+          if (processDateKey) {
+            if (!statsByDate[processDateKey]) {
+              statsByDate[processDateKey] = {
+                assigned: 0,
+                callComplete: 0,
+                finalUnreached: 0,
+                postProcessing: 0,
+                proofErrorAssigned: 0,
+                noRefundExchangeAssigned: 0,
+                proofErrorProcessed: 0,
+                noRefundExchangeProcessed: 0
+              };
+            }
+            if (item._isCallComplete) statsByDate[processDateKey].callComplete++;
+            if (item._isFinalUnreached) statsByDate[processDateKey].finalUnreached++;
+            if (item._isProofError && item._isCallComplete) statsByDate[processDateKey].proofErrorProcessed++;
+            if (item._isNoRefundExchange && item._isCallComplete) statsByDate[processDateKey].noRefundExchangeProcessed++;
+          }
+          
+          // 전체 일자별 통계 (후처리 체크 날짜 기준)
+          if (postProcessingDateKey) {
+            if (!statsByDate[postProcessingDateKey]) {
+              statsByDate[postProcessingDateKey] = {
+                assigned: 0,
+                callComplete: 0,
+                finalUnreached: 0,
+                postProcessing: 0,
+                proofErrorAssigned: 0,
+                noRefundExchangeAssigned: 0,
+                proofErrorProcessed: 0,
+                noRefundExchangeProcessed: 0
+              };
+            }
+            if (item._isPostProcessing) statsByDate[postProcessingDateKey].postProcessing++;
+          }
+        });
+
+        // 필터 라벨
         const filterLabels = {
           all: '전체',
           noCallComplete: '유선안내 미완료',
@@ -2836,150 +2931,262 @@
         };
         const filterLabel = filterLabels[selectedFilter] || '전체';
 
-        let html = '';
-
-        // 통계 요약 섹션
-        html += '<div class="stats-summary" style="margin-bottom: 20px;">';
-        html += '<div class="stats-summary-item" style="background: #e3f2fd; border-left-color: #2196f3;">';
-        html += '<div>전체 배정 건수</div>';
-        html += '<strong>' + totalStats.total + '건</strong>';
-        html += '</div>';
-        html += '<div class="stats-summary-item" style="background: #e8f5e9; border-left-color: #4caf50;">';
-        html += '<div>유선안내완료</div>';
-        html += '<strong>' + totalStats.callComplete + '건</strong>';
-        html += '</div>';
-        html += '<div class="stats-summary-item" style="background: #fff3e0; border-left-color: #ff9800;">';
-        html += '<div>유선안내 미완료</div>';
-        html += '<strong>' + totalStats.callIncomplete + '건</strong>';
-        html += '</div>';
-        html += '<div class="stats-summary-item" style="background: #ffebee; border-left-color: #f44336;">';
-        html += '<div>최종미연결</div>';
-        html += '<strong>' + totalStats.finalUnreached + '건</strong>';
-        html += '</div>';
-        html += '<div class="stats-summary-item" style="background: #fff9c4; border-left-color: #fbc02d;">';
-        html += '<div>후처리관리중</div>';
-        html += '<strong>' + totalStats.postProcessing + '건</strong>';
-        html += '</div>';
-        html += '<div class="stats-summary-item" style="background: #fce4ec; border-left-color: #e91e63;">';
-        html += '<div>증빙오류(반려)</div>';
-        html += '<strong>' + totalStats.proofError + '건</strong>';
-        html += '</div>';
-        html += '<div class="stats-summary-item" style="background: #e1f5fe; border-left-color: #03a9f4;">';
-        html += '<div>환불·교환 미체크</div>';
-        html += '<strong>' + totalStats.noRefundExchange + '건</strong>';
-        html += '</div>';
-        html += '</div>';
-
-        // 상담원별 통계 테이블
-        if (Object.keys(statsByAccount).length > 0) {
-          html += '<h4 style="margin-top: 24px; margin-bottom: 12px; font-size: 14px; color: #333;">상담원별 통계 요약</h4>';
-          html += '<table class="stats-table" style="margin-bottom: 24px;">';
-          html += '<thead><tr>';
-          html += '<th>상담원</th>';
-          html += '<th>전체</th><th>유선안내완료</th><th>유선안내 미완료</th>';
-          html += '<th>최종미연결</th><th>후처리관리중</th>';
-          html += '<th>증빙오류</th><th>환불·교환 미체크</th>';
-          html += '</tr></thead><tbody>';
-          
-          Object.keys(statsByAccount).sort().forEach(account => {
-            const stat = statsByAccount[account];
-            html += '<tr>';
-            html += '<td class="text-left">' + escapeHtml(stat.account.replace('@ubase.co.kr', '')) + '</td>';
-            html += '<td class="number">' + stat.total + '</td>';
-            html += '<td class="number" style="color: #4caf50;">' + stat.callComplete + '</td>';
-            html += '<td class="number" style="color: #ff9800;">' + stat.callIncomplete + '</td>';
-            html += '<td class="number" style="color: #f44336;">' + stat.finalUnreached + '</td>';
-            html += '<td class="number" style="color: #fbc02d;">' + stat.postProcessing + '</td>';
-            html += '<td class="number" style="color: #e91e63;">' + stat.proofError + '</td>';
-            html += '<td class="number" style="color: #03a9f4;">' + stat.noRefundExchange + '</td>';
-            html += '</tr>';
-          });
-          
-          html += '</tbody></table>';
-        }
-
-        // 일자별 통계 테이블
-        if (Object.keys(statsByDate).length > 0) {
-          html += '<h4 style="margin-top: 24px; margin-bottom: 12px; font-size: 14px; color: #333;">일자별 통계 요약</h4>';
-          html += '<table class="stats-table" style="margin-bottom: 24px;">';
-          html += '<thead><tr>';
-          html += '<th>일자</th>';
-          html += '<th>전체</th><th>유선안내완료</th><th>유선안내 미완료</th>';
-          html += '<th>최종미연결</th><th>후처리관리중</th>';
-          html += '<th>증빙오류</th><th>환불·교환 미체크</th>';
-          html += '</tr></thead><tbody>';
-          
-          Object.keys(statsByDate).sort().reverse().forEach(dateKey => {
-            const stat = statsByDate[dateKey];
-            const y = dateKey.substring(0, 4), m = dateKey.substring(4, 6), d = dateKey.substring(6, 8);
-            const dateStr = y + '-' + m + '-' + d;
-            html += '<tr>';
-            html += '<td>' + dateStr + '</td>';
-            html += '<td class="number">' + stat.total + '</td>';
-            html += '<td class="number" style="color: #4caf50;">' + stat.callComplete + '</td>';
-            html += '<td class="number" style="color: #ff9800;">' + stat.callIncomplete + '</td>';
-            html += '<td class="number" style="color: #f44336;">' + stat.finalUnreached + '</td>';
-            html += '<td class="number" style="color: #fbc02d;">' + stat.postProcessing + '</td>';
-            html += '<td class="number" style="color: #e91e63;">' + stat.proofError + '</td>';
-            html += '<td class="number" style="color: #03a9f4;">' + stat.noRefundExchange + '</td>';
-            html += '</tr>';
-          });
-          
-          html += '</tbody></table>';
-        }
-
-        // 상세 데이터 테이블
-        if (assignedItems.length > 0) {
-          html += '<h4 style="margin-top: 24px; margin-bottom: 12px; font-size: 14px; color: #333;">상세 데이터 (' + filterLabel + rangeLabel + accountLabel + ') - 총 ' + assignedItems.length + '건</h4>';
-          html += '<table class="stats-table" style="margin-top: 12px;">';
-          html += '<thead><tr>';
-          html += '<th>일자</th><th>상담원</th><th>접수ID</th><th>이름</th><th>연락처</th>';
-          html += '<th>프로젝트</th>';
-          html += '<th>유선안내완료</th><th>최종미연결</th><th>후처리관리중</th>';
-          html += '<th>증빙오류</th><th>환불·교환 미체크</th>';
-          html += '</tr></thead><tbody>';
-
-          // 배정/처리 날짜 내림차순, 상담원 오름차순으로 정렬
-          assignedItems.sort((a, b) => {
-            const aTime = a._targetTimestamp || 0;
-            const bTime = b._targetTimestamp || 0;
-            if (bTime !== aTime) return bTime - aTime;
-            return a._account.localeCompare(b._account);
-          });
-
-          assignedItems.forEach(item => {
-            // 배정/처리 날짜 표시
-            const targetDate = new Date(item._targetTimestamp || 0);
-            const dateStr = targetDate.getFullYear() + '-' + 
-              String(targetDate.getMonth() + 1).padStart(2, '0') + '-' + 
-              String(targetDate.getDate()).padStart(2, '0');
-            const projectLabel = PROJECT_LABELS[PREFIXES.indexOf(item._prefix)] || item._prefix;
-            html += '<tr>';
-            html += '<td>' + dateStr + '</td>';
-            html += '<td class="text-left">' + escapeHtml(item._account.replace('@ubase.co.kr', '')) + '</td>';
-            html += '<td>' + escapeHtml(item.id || '-') + '</td>';
-            html += '<td>' + escapeHtml(item.name || '-') + '</td>';
-            html += '<td>' + escapeHtml(item.contact || '-') + '</td>';
-            html += '<td>' + escapeHtml(projectLabel) + '</td>';
-            html += '<td class="cell-flag">' + (item._isCallComplete ? 'Y' : '-') + '</td>';
-            html += '<td class="cell-flag">' + (item._isFinalUnreached ? 'Y' : '-') + '</td>';
-            html += '<td class="cell-flag">' + (item._isPostProcessing ? 'Y' : '-') + '</td>';
-            html += '<td class="cell-flag">' + (item._isProofError ? 'Y' : '-') + '</td>';
-            html += '<td class="cell-flag">' + (item._isNoRefundExchange ? 'Y' : '-') + '</td>';
-            html += '</tr>';
-          });
-
-          html += '</tbody></table>';
-        } else {
-          html += '<div class="msg info">조회된 데이터가 없습니다.</div>';
-        }
-
-        agentDetailResult.innerHTML = html;
+        // 테이블 렌더링
+        renderAgentDetailTable(assignedItems, totalStats, filterLabel, statsByAccountAndDate, statsByDate);
       } catch (err) {
         agentDetailResult.innerHTML = '<div class="msg error">조회 실패: ' + escapeHtml(err.message || err) + '</div>';
       } finally {
         agentDetailLoading.style.display = 'none';
       }
+    }
+
+    function renderAgentDetailTable(assignedItems, totalStats, filterLabel, statsByAccountAndDate, statsByDate) {
+      if (!assignedItems.length) {
+        agentDetailResult.innerHTML = '<div class="msg info">조회된 데이터가 없습니다.</div>';
+        return;
+      }
+
+      const total = assignedItems.length;
+
+      let html = '';
+
+      // 간단한 요약 정보
+      html += '<div style="margin-bottom: 16px; padding: 12px; background: #f5f5f5; border-radius: 6px; font-size: 13px;">';
+      html += '<strong>[' + filterLabel + ']</strong> 총 ' + total + '건';
+      html += ' | ✅ 유선안내완료 ' + totalStats.callComplete + '건';
+      html += ' | ⏳ 미완료 ' + totalStats.callIncomplete + '건';
+      html += ' | 📞 최종미연결 ' + totalStats.finalUnreached + '건';
+      html += ' | ⚠️ 증빙오류 ' + totalStats.proofError + '건';
+      html += ' | 📋 환불·교환 미체크 ' + totalStats.noRefundExchange + '건';
+      html += '</div>';
+
+      // 상담원별 통계 테이블
+      if (Object.keys(statsByAccountAndDate).length > 0) {
+        html += '<h4 style="margin-top: 24px; margin-bottom: 12px; font-size: 14px; color: #333; font-weight: 600;">상담원별 통계</h4>';
+        
+        // 모든 날짜 수집
+        const allDates = new Set();
+        Object.keys(statsByAccountAndDate).forEach(account => {
+          Object.keys(statsByAccountAndDate[account]).forEach(dateKey => {
+            allDates.add(dateKey);
+          });
+        });
+        const sortedDates = Array.from(allDates).sort();
+        
+        // 각 상담원별로 테이블 생성
+        Object.keys(statsByAccountAndDate).sort().forEach(account => {
+          const accountShort = account.replace('@ubase.co.kr', '');
+          html += '<h5 style="margin-top: 20px; margin-bottom: 8px; font-size: 13px; color: #555; font-weight: 600;">' + escapeHtml(accountShort) + '</h5>';
+          html += '<table class="stats-table" style="margin-bottom: 16px;">';
+          html += '<thead><tr>';
+          html += '<th>일자</th>';
+          html += '<th>배정건수<br><small style="font-weight: normal; color: #666;">(당일)</small></th>';
+          html += '<th>누적 배정건수</th>';
+          html += '<th>당일 유선안내완료<br><small style="font-weight: normal; color: #666;">체크 건수</small></th>';
+          html += '<th>당일 최종미연결<br><small style="font-weight: normal; color: #666;">체크 건수</small></th>';
+          html += '<th>당일 후처리<br><small style="font-weight: normal; color: #666;">체크 건수</small></th>';
+          html += '<th>누적 후처리<br><small style="font-weight: normal; color: #666;">체크 건수</small></th>';
+          html += '<th>잔여<br><small style="font-weight: normal; color: #666;">증빙오류</small></th>';
+          html += '<th>잔여<br><small style="font-weight: normal; color: #666;">환불교환 미체크</small></th>';
+          html += '</tr></thead><tbody>';
+          
+          let cumulativeAssigned = 0; // 누적 배정건수
+          let cumulativePostProcessing = 0; // 누적 후처리 체크 건수
+          let cumulativeProofErrorAssigned = 0; // 누적 증빙오류 배정건수
+          let cumulativeProofErrorProcessed = 0; // 누적 증빙오류 처리건수
+          let cumulativeNoRefundExchangeAssigned = 0; // 누적 환불교환 미체크 배정건수
+          let cumulativeNoRefundExchangeProcessed = 0; // 누적 환불교환 미체크 처리건수
+          
+          sortedDates.forEach(dateKey => {
+            const stat = statsByAccountAndDate[account][dateKey] || {
+              assigned: 0,
+              callComplete: 0,
+              finalUnreached: 0,
+              postProcessing: 0,
+              proofErrorAssigned: 0,
+              noRefundExchangeAssigned: 0,
+              proofErrorProcessed: 0,
+              noRefundExchangeProcessed: 0
+            };
+            
+            const dailyAssigned = stat.assigned || 0;
+            const dailyCallComplete = stat.callComplete || 0;
+            const dailyFinalUnreached = stat.finalUnreached || 0;
+            const dailyPostProcessing = stat.postProcessing || 0;
+            
+            cumulativeAssigned += dailyAssigned;
+            cumulativePostProcessing += dailyPostProcessing;
+            cumulativeProofErrorAssigned += (stat.proofErrorAssigned || 0);
+            cumulativeProofErrorProcessed += (stat.proofErrorProcessed || 0);
+            cumulativeNoRefundExchangeAssigned += (stat.noRefundExchangeAssigned || 0);
+            cumulativeNoRefundExchangeProcessed += (stat.noRefundExchangeProcessed || 0);
+            
+            // 잔여건 계산 (누적 배정 - 누적 처리)
+            const proofErrorRemaining = cumulativeProofErrorAssigned - cumulativeProofErrorProcessed;
+            const noRefundExchangeRemaining = cumulativeNoRefundExchangeAssigned - cumulativeNoRefundExchangeProcessed;
+            
+            const y = dateKey.substring(0, 4), m = dateKey.substring(4, 6), d = dateKey.substring(6, 8);
+            const dateStr = y + '-' + m + '-' + d;
+            html += '<tr>';
+            html += '<td>' + dateStr + '</td>';
+            html += '<td class="number" style="font-weight: bold; color: #17a;">' + dailyAssigned + '</td>';
+            html += '<td class="number">' + cumulativeAssigned + '</td>';
+            html += '<td class="number" style="font-weight: bold; color: #4caf50;">' + dailyCallComplete + '</td>';
+            html += '<td class="number" style="font-weight: bold; color: #f44336;">' + dailyFinalUnreached + '</td>';
+            html += '<td class="number" style="font-weight: bold; color: #ff9800;">' + dailyPostProcessing + '</td>';
+            html += '<td class="number">' + cumulativePostProcessing + '</td>';
+            html += '<td class="number" style="color: #e91e63;">' + proofErrorRemaining + '</td>';
+            html += '<td class="number" style="color: #03a9f4;">' + noRefundExchangeRemaining + '</td>';
+            html += '</tr>';
+          });
+          
+          html += '</tbody></table>';
+        });
+      }
+
+      // 전체 통계 테이블
+      if (Object.keys(statsByDate).length > 0) {
+        html += '<h4 style="margin-top: 24px; margin-bottom: 12px; font-size: 14px; color: #333; font-weight: 600;">전체 통계</h4>';
+        html += '<table class="stats-table" style="margin-bottom: 24px;">';
+        html += '<thead><tr>';
+        html += '<th>일자</th>';
+        html += '<th>배정건수<br><small style="font-weight: normal; color: #666;">(당일)</small></th>';
+        html += '<th>누적 배정건수</th>';
+        html += '<th>당일 유선안내완료<br><small style="font-weight: normal; color: #666;">체크 건수</small></th>';
+        html += '<th>당일 최종미연결<br><small style="font-weight: normal; color: #666;">체크 건수</small></th>';
+        html += '<th>당일 후처리<br><small style="font-weight: normal; color: #666;">체크 건수</small></th>';
+        html += '<th>누적 후처리<br><small style="font-weight: normal; color: #666;">체크 건수</small></th>';
+        html += '<th>잔여<br><small style="font-weight: normal; color: #666;">증빙오류</small></th>';
+        html += '<th>잔여<br><small style="font-weight: normal; color: #666;">환불교환 미체크</small></th>';
+        html += '</tr></thead><tbody>';
+        
+        const allDates = Object.keys(statsByDate).sort();
+        let cumulativeAssigned = 0;
+        let cumulativePostProcessing = 0;
+        let cumulativeProofErrorAssigned = 0;
+        let cumulativeProofErrorProcessed = 0;
+        let cumulativeNoRefundExchangeAssigned = 0;
+        let cumulativeNoRefundExchangeProcessed = 0;
+        
+        allDates.forEach(dateKey => {
+          const stat = statsByDate[dateKey] || {
+            assigned: 0,
+            callComplete: 0,
+            finalUnreached: 0,
+            postProcessing: 0,
+            proofErrorAssigned: 0,
+            noRefundExchangeAssigned: 0,
+            proofErrorProcessed: 0,
+            noRefundExchangeProcessed: 0
+          };
+          
+          const dailyAssigned = stat.assigned || 0;
+          const dailyCallComplete = stat.callComplete || 0;
+          const dailyFinalUnreached = stat.finalUnreached || 0;
+          const dailyPostProcessing = stat.postProcessing || 0;
+          
+          cumulativeAssigned += dailyAssigned;
+          cumulativePostProcessing += dailyPostProcessing;
+          cumulativeProofErrorAssigned += (stat.proofErrorAssigned || 0);
+          cumulativeProofErrorProcessed += (stat.proofErrorProcessed || 0);
+          cumulativeNoRefundExchangeAssigned += (stat.noRefundExchangeAssigned || 0);
+          cumulativeNoRefundExchangeProcessed += (stat.noRefundExchangeProcessed || 0);
+          
+          // 잔여건 계산 (누적 배정 - 누적 처리)
+          const proofErrorRemaining = cumulativeProofErrorAssigned - cumulativeProofErrorProcessed;
+          const noRefundExchangeRemaining = cumulativeNoRefundExchangeAssigned - cumulativeNoRefundExchangeProcessed;
+          
+          const y = dateKey.substring(0, 4), m = dateKey.substring(4, 6), d = dateKey.substring(6, 8);
+          const dateStr = y + '-' + m + '-' + d;
+          html += '<tr>';
+          html += '<td>' + dateStr + '</td>';
+          html += '<td class="number" style="font-weight: bold; color: #17a;">' + dailyAssigned + '</td>';
+          html += '<td class="number">' + cumulativeAssigned + '</td>';
+          html += '<td class="number" style="font-weight: bold; color: #4caf50;">' + dailyCallComplete + '</td>';
+          html += '<td class="number" style="font-weight: bold; color: #f44336;">' + dailyFinalUnreached + '</td>';
+          html += '<td class="number" style="font-weight: bold; color: #ff9800;">' + dailyPostProcessing + '</td>';
+          html += '<td class="number">' + cumulativePostProcessing + '</td>';
+          html += '<td class="number" style="color: #e91e63;">' + proofErrorRemaining + '</td>';
+          html += '<td class="number" style="color: #03a9f4;">' + noRefundExchangeRemaining + '</td>';
+          html += '</tr>';
+        });
+        
+        html += '</tbody></table>';
+      }
+
+      // CSV 다운로드 버튼
+      html += '<div style="margin-top: 24px;">';
+      html += '<button type="button" id="downloadAgentDetailCSVBtn" style="background: #28a745; color: #fff; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">상세 데이터 CSV 다운로드 (총 ' + total + '건)</button>';
+      html += '</div>';
+
+      agentDetailResult.innerHTML = html;
+
+      // CSV 다운로드 버튼 이벤트
+      const downloadBtn = document.getElementById('downloadAgentDetailCSVBtn');
+      if (downloadBtn) {
+        downloadBtn.addEventListener('click', () => {
+          const rangeLabel = (agentDetailDateAll && !agentDetailDateAll.checked && agentDetailStartDate && agentDetailEndDate) ? 
+            (' (' + agentDetailStartDate.value + ' ~ ' + agentDetailEndDate.value + ')') : ' (전체)';
+          const accountLabel = agentDetailAccountSelect && agentDetailAccountSelect.value ? 
+            (' - ' + agentDetailAccountSelect.value.replace('@ubase.co.kr', '')) : '';
+          downloadAgentDetailCSV(assignedItems, filterLabel, rangeLabel, accountLabel);
+        });
+      }
+    }
+    
+    // 상담원 상세 관리 CSV 다운로드
+    function downloadAgentDetailCSV(assignedItems, filterLabel, rangeLabel, accountLabel) {
+      if (!assignedItems || assignedItems.length === 0) {
+        alert('다운로드할 데이터가 없습니다.');
+        return;
+      }
+      
+      // 정렬 (배정/처리 날짜 내림차순, 상담원 오름차순)
+      const sortedItems = [...assignedItems].sort((a, b) => {
+        const aTime = a._targetTimestamp || 0;
+        const bTime = b._targetTimestamp || 0;
+        if (bTime !== aTime) return bTime - aTime;
+        return a._account.localeCompare(b._account);
+      });
+      
+      let csv = '상담원 상세 관리 데이터\n';
+      csv += '필터: ' + filterLabel + rangeLabel + accountLabel + '\n';
+      csv += '생성일시: ' + new Date().toLocaleString('ko-KR') + '\n';
+      csv += '총 건수: ' + assignedItems.length + '건\n\n';
+      
+      // CSV 헤더
+      csv += '일자,상담원,접수ID,이름,연락처,프로젝트,유선안내완료,최종미연결,후처리관리중,증빙오류,환불·교환 미체크\n';
+      
+      sortedItems.forEach(item => {
+        const targetDate = new Date(item._targetTimestamp || 0);
+        const dateStr = targetDate.getFullYear() + '-' + 
+          String(targetDate.getMonth() + 1).padStart(2, '0') + '-' + 
+          String(targetDate.getDate()).padStart(2, '0');
+        const projectLabel = PROJECT_LABELS[PREFIXES.indexOf(item._prefix)] || item._prefix;
+        
+        csv += '"' + dateStr + '",';
+        csv += '"' + (item._account.replace('@ubase.co.kr', '')) + '",';
+        csv += '"' + (item.id || '-') + '",';
+        csv += '"' + (item.name || '-') + '",';
+        csv += '"' + (item.contact || '-') + '",';
+        csv += '"' + projectLabel + '",';
+        csv += '"' + (item._isCallComplete ? 'Y' : '-') + '",';
+        csv += '"' + (item._isFinalUnreached ? 'Y' : '-') + '",';
+        csv += '"' + (item._isPostProcessing ? 'Y' : '-') + '",';
+        csv += '"' + (item._isProofError ? 'Y' : '-') + '",';
+        csv += '"' + (item._isNoRefundExchange ? 'Y' : '-') + '"\n';
+      });
+      
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      const dateStr = new Date().toISOString().split('T')[0];
+      link.setAttribute('download', '상담원상세관리_' + dateStr + '.csv');
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
 
     // 통계 탭: 보기 모드에 따라 loadStats 또는 loadHistory 호출
