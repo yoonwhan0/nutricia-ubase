@@ -2659,7 +2659,19 @@
               if (selectedAccount && latest.account.toLowerCase() !== selectedAccount.toLowerCase()) {
                 return;
               }
-              latestDistributionMap.set(key, latest);
+              
+              // 일자 필터 적용: 키에서 dateKey 추출
+              const parts = key.split('_');
+              if (parts.length >= 3) {
+                const dateKey = parts[1];
+                if (dateKey && /^\d{8}$/.test(dateKey)) {
+                  const y = dateKey.substring(0, 4), m = dateKey.substring(4, 6), d = dateKey.substring(6, 8);
+                  const itemDate = new Date(y + '-' + m + '-' + d + 'T00:00:00').getTime();
+                  if (itemDate >= startTime && itemDate <= endTime) {
+                    latestDistributionMap.set(key, latest);
+                  }
+                }
+              }
             }
           }
         });
