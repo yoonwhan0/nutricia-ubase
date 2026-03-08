@@ -420,6 +420,17 @@
         <div id="statsResult"></div>
       </div>
     </div>
+    <div class="dashboard-section">
+      <div class="dashboard-card" style="border-left: 4px solid #2e7d32;">
+        <h3 class="card-group-title">유선안내완료 고객 재접수 (전체)</h3>
+        <p class="hint">상담원이 유선안내 완료 처리한 고객이 이후에 신규 접수한 건을 모두 조회합니다. 고객이 재접수를 잘 했는지, CS가 끝까지 안내했는지 검증용입니다. (최근 90일 이내 유선안내완료 건 기준)</p>
+        <div class="toolbar">
+          <button type="button" id="loadResubmissionBtn" style="background: #2e7d32; color: #fff;">재접수 조회</button>
+        </div>
+        <div id="resubmissionLoading" class="loading" style="display: none;">재접수 조회 중…</div>
+        <div id="resubmissionResult"></div>
+      </div>
+    </div>
     </div>
 
     <!-- 탭3: 상담원 상세 관리 -->
@@ -579,6 +590,9 @@
     const loginPassword = document.getElementById('loginPassword');
     const loginBtn = document.getElementById('loginBtn');
     const loginError = document.getElementById('loginError');
+    const loadResubmissionBtn = document.getElementById('loadResubmissionBtn');
+    const resubmissionLoading = document.getElementById('resubmissionLoading');
+    const resubmissionResult = document.getElementById('resubmissionResult');
 
     // 분배 대상 계정 체크박스 초기화
     const distAccountCheckboxes = document.getElementById('distAccountCheckboxes');
@@ -902,6 +916,55 @@
       }
       return null;
     }
+    // 유선안내완료 체크 이벤트 시점 반환 (재접수 판별용)
+    function getCallCompleteTimestampFromPh(processingHistory) {
+      if (!Array.isArray(processingHistory) || processingHistory.length === 0) return null;
+      const sorted = [...processingHistory].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      for (const h of sorted) {
+        if (h.changes && typeof h.changes === 'string') {
+          if (h.changes.includes('유선안내완료: 체크')) return h.timestamp || null;
+          if (h.changes.includes('유선안내완료: 해제')) return null;
+        }
+      }
+      return null;
+    }
+
+    const LOOKBACK_DAYS_RESUB = 90;
+    // 연락처 → { timestamp, account } (모든 상담원, 최근 90일 이내 유선안내완료만)
+    function buildContactToCallCompleteMapAllAgents(allItems) {
+      const map = new Map();
+      const cutoff = Date.now() - LOOKBACK_DAYS_RESUB * 24 * 60 * 60 * 1000;
+      allItems.forEach((d) => {
+        const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
+        const ph = processingHistoryMap.get(key) || [];
+        if (!isCallCompleteForKey(ph)) return;
+        const ts = getCallCompleteTimestampFromPh(ph);
+        if (ts == null || ts < cutoff) return;
+        const account = getProcessedByAccount(ph);
+        if (!account) return;
+        const norm = normalizePhone(d.contact);
+        if (!norm) return;
+        const existing = map.get(norm);
+        if (existing == null || ts < existing.timestamp) map.set(norm, { timestamp: ts, account });
+      });
+      return map;
+    }
+    // 유선안내완료 고객의 재접수 건 (전체 상담원). 이미 유선안내완료된 건은 제외. item._resubmissionAgent 로 안내 상담원 표시
+    function getResubmissionItemsAll(allItems, contactMap) {
+      return allItems.filter((d) => {
+        const norm = normalizePhone(d.contact);
+        if (!norm) return false;
+        const x = contactMap.get(norm);
+        if (!x) return false;
+        if ((d.createdAt || 0) <= x.timestamp) return false;
+        const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
+        const ph = processingHistoryMap.get(key) || [];
+        if (ph.length > 0 ? isCallCompleteForKey(ph) : !!d.callComplete) return false;
+        d._resubmissionAgent = x.account;
+        return true;
+      });
+    }
+
     // 후처리관리중 여부: processing history에서 최신 변경 기준
     function isPostProcessingForKey(processingHistory) {
       if (!Array.isArray(processingHistory) || processingHistory.length === 0) return false;
@@ -3221,6 +3284,66 @@
     });
     if (resetDistributionBtn) resetDistributionBtn.addEventListener('click', resetDistribution);
     if (loadRemainingBtn) loadRemainingBtn.addEventListener('click', loadRemaining);
+
+    async function loadResubmission() {
+      if (!db || !resubmissionResult) return;
+      if (resubmissionLoading) resubmissionLoading.style.display = 'block';
+      resubmissionResult.innerHTML = '';
+      try {
+        await loadProcessingAndCounselingFromFirebase();
+        const allItems = [];
+        for (const prefix of PREFIXES) {
+          const snap = await get(dbRef(db, prefix + '/submissions_meta'));
+          if (snap.exists()) {
+            snap.forEach((dateSnap) => {
+              const dateKey = dateSnap.key;
+              if (!/^\d{8}$/.test(dateKey)) return;
+              dateSnap.forEach((inner) => {
+                const item = inner.val();
+                const idx = PREFIXES.indexOf(prefix);
+                allItems.push({
+                  ...item,
+                  _prefix: prefix,
+                  id: inner.key,
+                  _dateKey: dateKey,
+                  _projectIndex: idx >= 0 ? idx + 1 : 0
+                });
+              });
+            });
+          }
+        }
+        const contactMap = buildContactToCallCompleteMapAllAgents(allItems);
+        const resubmissionItems = getResubmissionItemsAll(allItems, contactMap);
+        resubmissionItems.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+        if (resubmissionItems.length === 0) {
+          resubmissionResult.innerHTML = '<p class="msg info">유선안내완료 고객의 재접수 건이 없습니다. (최근 90일 이내 유선안내완료 건 기준)</p>';
+        } else {
+          let html = '<p class="msg info">유선안내완료 고객 재접수 ' + resubmissionItems.length + '건 (최근 90일 이내 완료 건 기준)</p>';
+          html += '<div class="admin-table-wrapper"><table class="stats-table">';
+          html += '<thead><tr><th>접수일시</th><th>이름</th><th>연락처</th><th>접수경로</th><th>안내 상담원</th></tr></thead><tbody>';
+          resubmissionItems.forEach((item) => {
+            const contactMask = (item.contact || '').replace(/\d(?=\d{4})/g, '*');
+            const projectLabel = PROJECT_LABELS[PREFIXES.indexOf(item._prefix)] || item._prefix;
+            const agentLabel = (item._resubmissionAgent || '').replace('@ubase.co.kr', '');
+            html += '<tr>';
+            html += '<td>' + formatDate(item.createdAt) + '</td>';
+            html += '<td>' + escapeHtml(item.name || '-') + '</td>';
+            html += '<td>' + escapeHtml(contactMask || '-') + '</td>';
+            html += '<td>' + escapeHtml(projectLabel) + '</td>';
+            html += '<td>' + escapeHtml(agentLabel || '-') + '</td>';
+            html += '</tr>';
+          });
+          html += '</tbody></table></div>';
+          resubmissionResult.innerHTML = html;
+        }
+      } catch (err) {
+        console.error('재접수 조회 오류:', err);
+        resubmissionResult.innerHTML = '<p class="msg error">조회 실패: ' + (err.message || err) + '</p>';
+      }
+      if (resubmissionLoading) resubmissionLoading.style.display = 'none';
+    }
+    if (loadResubmissionBtn) loadResubmissionBtn.addEventListener('click', loadResubmission);
 
     // CSV 다운로드
     if (downloadStatsBtn) {
