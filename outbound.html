@@ -423,7 +423,7 @@
       </div>
       <div style="margin-bottom: 12px;">
         <p class="msg ubase-notice" style="background:#fff3cd; color:#856404; border-left:4px solid #ffc107;"><strong>공지:</strong> 아웃바운드 상담원 전용 페이지입니다. 유선안내 완료 체크 및 상담이력 기재가 가능합니다.</p>
-        <p class="msg ubase-notice" style="background:#fff; color:#555; border-left:4px solid #17a; font-size:12px; margin-top:8px;"><strong>행 색상:</strong> <span style="background:#e3f2fd;padding:2px 6px;border-radius:4px;">푸른색</span> = 환불·교환 미체크 + 잘못된정보 미체크 · <span style="background:#ffebee;padding:2px 6px;border-radius:4px;">붉은색</span> = 증빙오류(반려)</p>
+        <p class="msg ubase-notice" style="background:#fff; color:#555; border-left:4px solid #17a; font-size:12px; margin-top:8px;"><strong>행 색상:</strong> <span style="background:#e3f2fd;padding:2px 6px;border-radius:4px;">푸른색</span> = 환불·교환 모두 미체크 또는 잘못된정보 체크 · <span style="background:#ffebee;padding:2px 6px;border-radius:4px;">붉은색</span> = 증빙오류(반려)</p>
       </div>
       <div id="listMessage"></div>
       <div id="resubmissionBlock" class="resubmission-block" style="display: none;"></div>
@@ -1010,6 +1010,12 @@
         } else if (viewFilter === 'noCallComplete') {
           if (isCsAccount()) {
             base = getMyUnprocessedItems();
+            // 내가 해야할 일: 푸른 음영(환불·교환 모두 미체크 or 잘못된정보 체크) 또는 붉은 음영(증빙오류 반려)인 건만 표시
+            base = base.filter((d) => {
+              const isProofError = !!d.proofError;
+              const isBlueGroup = (!d.refundDone && !d.exchangeDone) || !!d.invalidInfo;
+              return isProofError || isBlueGroup;
+            });
           } else {
             base = base.filter((d) => {
               const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
@@ -1263,8 +1269,8 @@
         const dateKey = d._dateKey || '';
         const isLegacy = !!d._isLegacy;
         const isProofError = !!d.proofError;
-        const isNoCheck = !d.refundDone && !d.exchangeDone && !d.invalidInfo && !isProofError;
-        const rowClass = isProofError ? 'row-proof-error' : (isNoCheck ? 'row-no-check' : '');
+        const isBlueGroup = (!d.refundDone && !d.exchangeDone) || !!d.invalidInfo;
+        const rowClass = isProofError ? 'row-proof-error' : (isBlueGroup ? 'row-no-check' : '');
 
         rowsHtml += '<tr class="' + rowClass + '" data-id="' + escapeAttr(d.id) + '" data-date-key="' + escapeAttr(dateKey) + '" data-legacy="' + (isLegacy ? '1' : '0') + '" data-prefix="' + escapeAttr(prefix) + '" data-project-index="' + d._projectIndex + '">';
         rowsHtml += '<td class="cell-seq">' + seq + '</td>';
