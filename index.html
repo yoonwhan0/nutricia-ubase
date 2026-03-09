@@ -669,7 +669,7 @@
       if (Object.keys(metaSnaps).length !== PREFIXES.length) return;
       allItems = buildItemsFromMetaSnaps();
       
-      // 제조번호 + 고유번호 조합 중복 검사 (자동) - 다른 고객이 사용한 경우만
+      // 제조번호 + 고유번호 조합 중복 검사 (자동) — 다른 접수에서 중복이거나, 같은 접수 내 2회 이상 사용된 경우 모두 붉은 음영
       duplicateSubmissionIds.clear();
       duplicateUniqueCodes.clear();
       const combinationMap = new Map(); // 정규화된 제조번호+고유번호 조합 -> [{ submissionId, dateKey, prefix, contact, key, originalCode, originalBatch }]
@@ -724,25 +724,13 @@
         console.log('공백 포함 제조번호+고유번호 조합 샘플:', sampleCombinations.slice(0, 5));
       }
       
-      // 중복된 제조번호+고유번호 조합을 가진 접수 ID 수집 (2개 이상 사용된 모든 조합)
-      // 중요: 같은 접수 내에서 여러 번 사용된 경우는 제외 (다른 접수에서 사용된 경우만 중복으로 간주)
+      // 중복된 제조번호+고유번호 조합: (1) 다른 접수에서 사용된 경우 (2) 같은 접수 내에서 2번 이상 사용된 경우 모두 붉은 음영
       combinationMap.forEach((submissions, normalizedCombination) => {
         if (submissions.length >= 2) {
-          // 같은 접수 내에서 여러 번 사용된 경우를 제외하기 위해 접수별로 그룹화
-          const submissionKeys = new Set();
+          duplicateUniqueCodes.add(normalizedCombination);
           submissions.forEach((sub) => {
-            submissionKeys.add(sub.key);
+            duplicateSubmissionIds.add(sub.key);
           });
-          
-          // 실제로 2개 이상의 다른 접수에서 사용된 경우만 중복으로 간주
-          if (submissionKeys.size >= 2) {
-            // 정규화된 조합을 중복 목록에 추가 (2개 이상의 다른 접수에서 사용된 경우만)
-            duplicateUniqueCodes.add(normalizedCombination);
-            // 모든 중복 접수를 중복 목록에 추가
-            submissions.forEach((sub) => {
-              duplicateSubmissionIds.add(sub.key);
-            });
-          }
         }
       });
       
