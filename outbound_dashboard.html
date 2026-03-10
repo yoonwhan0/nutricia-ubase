@@ -278,6 +278,18 @@
 
     <!-- 탭1: 물량 분배 (유형별 분리) -->
     <div id="tab-distribution" class="dashboard-tab-content active">
+    <!-- 휴대번호로 분배 여부 조회 -->
+    <div class="dashboard-card" style="margin-bottom: 20px; padding: 16px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px;">
+      <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #333;">휴대번호로 분배 여부 조회</h3>
+      <p class="hint" style="margin-bottom: 12px;">고객 휴대번호를 입력하면 해당 고객의 접수건이 분배됐는지·미분배인지 확인할 수 있습니다.</p>
+      <div class="toolbar" style="margin-bottom: 12px;">
+        <label style="font-size: 13px;">휴대번호:</label>
+        <input type="tel" id="phoneLookupInput" placeholder="예: 01012345678" style="width: 160px; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;">
+        <button type="button" id="phoneLookupBtn" class="toolbar button" style="background: #17a; color: #fff;">분배 여부 조회</button>
+      </div>
+      <div id="phoneLookupLoading" class="loading" style="display: none;">조회 중…</div>
+      <div id="phoneLookupResult"></div>
+    </div>
     <div class="dashboard-card" style="margin-bottom: 20px; padding: 16px; background: #f0f7ff; border: 1px solid #b3d4fc; border-radius: 8px;">
       <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #1a1a1a;">📌 분배 규칙 안내</h3>
       <p style="margin: 0 0 12px 0; font-size: 12px; color: #333; line-height: 1.6;">
@@ -3279,6 +3291,80 @@
     });
     if (resetDistributionBtn) resetDistributionBtn.addEventListener('click', resetDistribution);
     if (loadRemainingBtn) loadRemainingBtn.addEventListener('click', loadRemaining);
+
+    // 휴대번호로 분배 여부 조회
+    const phoneLookupInput = document.getElementById('phoneLookupInput');
+    const phoneLookupBtn = document.getElementById('phoneLookupBtn');
+    const phoneLookupLoading = document.getElementById('phoneLookupLoading');
+    const phoneLookupResult = document.getElementById('phoneLookupResult');
+    async function runPhoneLookup() {
+      if (!db || !phoneLookupResult) return;
+      const raw = (phoneLookupInput && phoneLookupInput.value) ? phoneLookupInput.value.trim() : '';
+      const normalized = canonicalPhone(raw);
+      if (!normalized || normalized.length < 10) {
+        phoneLookupResult.innerHTML = '<p class="msg error">휴대번호를 입력해주세요. (숫자 10자리 이상)</p>';
+        return;
+      }
+      if (phoneLookupLoading) phoneLookupLoading.style.display = 'block';
+      phoneLookupResult.innerHTML = '';
+      try {
+        const distMap = await loadDistributionHistoryFromFirebase();
+        const allItems = [];
+        for (const prefix of PREFIXES) {
+          const snap = await get(dbRef(db, prefix + '/submissions_meta'));
+          if (snap.exists()) {
+            snap.forEach((dateSnap) => {
+              const dateKey = dateSnap.key;
+              if (!/^\d{8}$/.test(dateKey)) return;
+              dateSnap.forEach((inner) => {
+                const item = inner.val();
+                allItems.push({
+                  ...item,
+                  _prefix: prefix,
+                  id: inner.key,
+                  _dateKey: dateKey
+                });
+              });
+            });
+          }
+        }
+        const matched = allItems.filter((item) => canonicalPhone(item.contact || '') === normalized);
+        matched.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+        if (matched.length === 0) {
+          phoneLookupResult.innerHTML = '<p class="msg info">해당 휴대번호로 등록된 접수건이 없습니다.</p>';
+        } else {
+          let html = '<p class="msg info">총 ' + matched.length + '건 (휴대번호 일치)</p>';
+          html += '<div class="admin-table-wrapper"><table class="stats-table">';
+          html += '<thead><tr><th>접수일시</th><th>이름</th><th>연락처</th><th>접수경로</th><th>분배 여부</th><th>담당 상담사</th></tr></thead><tbody>';
+          matched.forEach((item) => {
+            const key = item._prefix + '_' + (item._dateKey || '') + '_' + item.id;
+            const history = distMap.get(key) || [];
+            const latest = Array.isArray(history) && history.length > 0 ? history[history.length - 1] : null;
+            const isAssigned = !!latest;
+            const status = isAssigned ? '<span style="color:#28a745;font-weight:600;">분배됨</span>' : '<span style="color:#dc3545;">미분배</span>';
+            const account = isAssigned ? (latest.account || '-') : '-';
+            const projectLabel = PROJECT_LABELS[PREFIXES.indexOf(item._prefix)] || item._prefix;
+            html += '<tr>';
+            html += '<td>' + formatDate(item.createdAt) + '</td>';
+            html += '<td>' + escapeHtml(item.name || '-') + '</td>';
+            html += '<td>' + escapeHtml(item.contact || '-') + '</td>';
+            html += '<td>' + escapeHtml(projectLabel) + '</td>';
+            html += '<td>' + status + '</td>';
+            html += '<td>' + escapeHtml(account) + '</td>';
+            html += '</tr>';
+          });
+          html += '</tbody></table></div>';
+          phoneLookupResult.innerHTML = html;
+        }
+      } catch (err) {
+        console.error('휴대번호 조회 오류:', err);
+        phoneLookupResult.innerHTML = '<p class="msg error">조회 실패: ' + (err.message || err) + '</p>';
+      }
+      if (phoneLookupLoading) phoneLookupLoading.style.display = 'none';
+    }
+    if (phoneLookupBtn) phoneLookupBtn.addEventListener('click', runPhoneLookup);
+    if (phoneLookupInput) phoneLookupInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runPhoneLookup(); });
 
     async function loadResubmission() {
       if (!db || !resubmissionResult) return;
