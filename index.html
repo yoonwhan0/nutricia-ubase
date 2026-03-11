@@ -360,11 +360,7 @@
           <button type="button" class="btn" data-expiry-site="3" style="background: #1a1a1a; color: #fff; font-size: 12px; padding: 8px 16px;">몰테일 (4번) 소비기한 확인</button>
         </div>
       </div>
-      <div style="margin-bottom: 12px;">
-        <p class="msg ubase-notice" style="background:#ffe0e0; color:#721c24; border-left:4px solid #dc3545; margin-bottom: 8px; padding: 10px; border-radius: 4px; font-size: 13px;"><strong>공지:</strong> 붉은음영 처리된 고객은 고유번호를 중복으로 업로드한 고객입니다. 업무에 참고 부탁드립니다.</p>
-      </div>
       <div id="listMessage"></div>
-      <p id="duplicateCountNotice" style="display:none; margin:8px 0; padding:8px 12px; background:#ffe0e0; color:#721c24; border-radius:6px; font-size:13px;"></p>
       <div id="submissionList"></div>
     </div>
   </div>
@@ -736,14 +732,6 @@
       
       paginationPage = 1;
       renderTable();
-      
-      // 중복 건수 안내 (강조 확인용)
-      const dupCountEl = document.getElementById('duplicateCountNotice');
-      if (dupCountEl) {
-        const cnt = duplicateSubmissionIds.size;
-        dupCountEl.textContent = cnt > 0 ? '제조번호+고유번호 중복 ' + cnt + '건 — 붉은색 강조' : '';
-        dupCountEl.style.display = cnt > 0 ? 'block' : 'none';
-      }
     }
 
     /** 4개 프로젝트 submissions_meta 한 번만 읽기 (실시간 구독 없음 → 다운로드 비용 절감) */
