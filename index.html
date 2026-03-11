@@ -301,6 +301,37 @@
       font-size: 14px;
       z-index: 1;
     }
+    /* 초기 고객정보 로딩 시 로더 (기존 코드 무영향) */
+    #listView { position: relative; }
+    .initial-load-overlay {
+      position: absolute; inset: 0; z-index: 100;
+      background: rgba(255,255,255,0.92);
+      display: none; justify-content: center; align-items: center;
+    }
+    .initial-load-overlay.visible { display: flex; }
+    .initial-load-overlay .loader {
+      --ANIMATION-DELAY-MULTIPLIER: 70ms;
+      padding: 0; margin: 0;
+      display: flex; flex-direction: row; justify-content: center; align-items: center;
+      overflow: hidden;
+    }
+    .initial-load-overlay .loader span {
+      padding: 0; margin: 0; color: #17a;
+      font-size: 1.5rem; letter-spacing: 0.08em;
+      animation: initialLoadHideAndSeek 1s alternate infinite cubic-bezier(0.86, 0, 0.07, 1);
+    }
+    .initial-load-overlay .loader .l { animation-delay: calc(var(--ANIMATION-DELAY-MULTIPLIER) * 0); }
+    .initial-load-overlay .loader .o { animation-delay: calc(var(--ANIMATION-DELAY-MULTIPLIER) * 1); }
+    .initial-load-overlay .loader .a { animation-delay: calc(var(--ANIMATION-DELAY-MULTIPLIER) * 2); }
+    .initial-load-overlay .loader .d { animation-delay: calc(var(--ANIMATION-DELAY-MULTIPLIER) * 3); }
+    .initial-load-overlay .loader .ispan { animation-delay: calc(var(--ANIMATION-DELAY-MULTIPLIER) * 4); }
+    .initial-load-overlay .loader .n { animation-delay: calc(var(--ANIMATION-DELAY-MULTIPLIER) * 5); }
+    .initial-load-overlay .loader .g { animation-delay: calc(var(--ANIMATION-DELAY-MULTIPLIER) * 6); }
+    .initial-load-overlay .loader .i { margin-inline: 5px; }
+    @keyframes initialLoadHideAndSeek {
+      0% { transform: translateY(4rem); }
+      100% { transform: translateY(0rem); }
+    }
   </style>
 </head>
 <body>
@@ -362,6 +393,11 @@
       </div>
       <div id="listMessage"></div>
       <div id="submissionList"></div>
+    <div id="initialLoadOverlay" class="initial-load-overlay" aria-hidden="true">
+      <div class="loader">
+        <span class="l">L</span><span class="o">O</span><span class="a">A</span><span class="d">D</span><span class="ispan i">I</span><span class="n">N</span><span class="g">G</span>
+      </div>
+    </div>
     </div>
   </div>
 
@@ -738,6 +774,8 @@
     async function loadMetaOnce() {
       if (!db || !listEl) return;
       const refreshBtn = document.getElementById('listRefreshBtn');
+      const loadOverlay = document.getElementById('initialLoadOverlay');
+      if (loadOverlay) loadOverlay.classList.add('visible');
       listEl.innerHTML = '<p class="msg info">4개 프로젝트 데이터 로드 중…</p>';
       if (refreshBtn) refreshBtn.disabled = true;
       metaSnaps = {};
@@ -751,6 +789,7 @@
         listEl.innerHTML = '<p class="msg error">로드 실패: ' + (err.message || err) + '</p>';
       }
       if (refreshBtn) refreshBtn.disabled = false;
+      if (loadOverlay) loadOverlay.classList.remove('visible');
     }
 
     function getFilteredItems() {
