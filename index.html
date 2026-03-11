@@ -319,7 +319,6 @@
       padding: 0; margin: 0; color: #17a;
       font-size: 1.5rem; letter-spacing: 0.08em;
       animation: initialLoadHideAndSeek 1s alternate infinite cubic-bezier(0.86, 0, 0.07, 1);
-      will-change: transform; /* 애니메이션 레이어 분리로 리플로우 비용 감소 */
     }
     .initial-load-overlay .loader .l { animation-delay: calc(var(--ANIMATION-DELAY-MULTIPLIER) * 0); }
     .initial-load-overlay .loader .o { animation-delay: calc(var(--ANIMATION-DELAY-MULTIPLIER) * 1); }
@@ -783,12 +782,14 @@
       try {
         const snaps = await Promise.all(PREFIXES.map((prefix) => get(dbRef(db, prefix + '/submissions_meta'))));
         PREFIXES.forEach((prefix, i) => { metaSnaps[prefix] = snaps[i]; });
+        if (loadOverlay) loadOverlay.classList.remove('visible');
+        if (refreshBtn) refreshBtn.disabled = false;
         applyMetaAndRender();
       } catch (err) {
         listEl.innerHTML = '<p class="msg error">로드 실패: ' + (err.message || err) + '</p>';
+        if (loadOverlay) loadOverlay.classList.remove('visible');
+        if (refreshBtn) refreshBtn.disabled = false;
       }
-      if (refreshBtn) refreshBtn.disabled = false;
-      if (loadOverlay) loadOverlay.classList.remove('visible');
     }
 
     function getFilteredItems() {
