@@ -708,6 +708,45 @@
       }
     }
 
+    // 분배/미분배 목록 CSV 다운로드 (재접수 고객 사전 배분 참고용)
+    function escapeCsvCell(v) {
+      const s = (v == null ? '' : String(v)).replace(/"/g, '""');
+      return '"' + s + '"';
+    }
+    function downloadDistributionListCSV(filterType) {
+      const data = lastDistributionExportData[filterType];
+      if (!data || (!data.assigned.length && !data.unassigned.length)) {
+        alert('다운로드할 분배 목록이 없습니다. 먼저 해당 유형을 조회해주세요.');
+        return;
+      }
+      const filterLabel = data.filterLabel || (filterType === 'noCheck' ? '환불/교환 미체크' : '증빙오류(반려)');
+      const headers = ['분배여부', '담당상담사', '유형', '접수일시', '이름', '연락처', '접수경로', '접수ID'];
+      let csv = headers.map(h => escapeCsvCell(h)).join(',') + '\n';
+      const pushRow = (item, 분배여부, 담당상담사) => {
+        const projectLabel = PROJECT_LABELS[PREFIXES.indexOf(item._prefix)] || item._prefix;
+        csv += escapeCsvCell(분배여부) + ',';
+        csv += escapeCsvCell(담당상담사) + ',';
+        csv += escapeCsvCell(filterLabel) + ',';
+        csv += escapeCsvCell(formatDate(item.createdAt)) + ',';
+        csv += escapeCsvCell(item.name || '') + ',';
+        csv += escapeCsvCell(item.contact || '') + ',';
+        csv += escapeCsvCell(projectLabel) + ',';
+        csv += escapeCsvCell(item.id || '') + '\n';
+      };
+      data.unassigned.forEach(item => pushRow(item, '미분배', ''));
+      data.assigned.forEach(item => pushRow(item, '분배됨', item._assignedTo || ''));
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.setAttribute('href', URL.createObjectURL(blob));
+      const dateStr = new Date().toISOString().split('T')[0];
+      const labelShort = filterType === 'noCheck' ? '환불교환미체크' : '증빙오류';
+      link.setAttribute('download', '아웃바운드_분배목록_' + labelShort + '_' + dateStr + '.csv');
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
     // 계정별 회수: 해당 상담사에게 배정된 건 중 미처리 건만 회수 (처리완료 건은 그대로 유지)
     async function recallDistributionByAccount(account) {
       if (!account || !confirm(account + '에게 배정된 미처리 건을 회수하시겠습니까?\n\n※ 해당 상담사가 이미 처리(유선안내완료)한 건은 회수되지 않고 유지됩니다.')) {
@@ -828,6 +867,8 @@
     let counselingHistoryMap = new Map();
     let allSubmissions = [];
     let loadDistributionInProgress = false; // 동시 실행 방지
+    let lastDistributionExportData = { noCheck: null, proofError: null }; // 분배/미분배 목록 CSV용
+    let lastStatsViewMode = 'byAccount'; // 통계 CSV 파일명용 (상담사별 요약 / 날짜별 상세)
     let isSigningOut = false; // 무한 루프 방지 플래그
     let lastCheckedEmail = ''; // 마지막으로 확인한 이메일 (중복 체크 방지)
 
@@ -1336,6 +1377,7 @@
         });
         html += '</tbody></table>';
         statsResult.innerHTML = html;
+        lastStatsViewMode = 'byAccount';
         downloadStatsBtn.style.display = 'inline-block';
       } catch (err) {
         statsResult.innerHTML = '<div class="msg error">통계 조회 실패: ' + escapeHtml(err.message || err) + '</div>';
@@ -1719,8 +1761,8 @@
           
           // 필터 타입에 따라 필터링
           if (filterType === 'noCheck') {
-            // 환불·교환 모두 미체크 OR 잘못된정보 체크 (한 그룹). 증빙오류 아님.
-            const isNoCheckGroup = (!item.refundDone && !item.exchangeDone) || !!item.invalidInfo;
+            // 환불·교환 모두 미체크 AND 잘못된정보 미체크 (잘못된정보 체크 건은 분배 제외). 증빙오류 아님.
+            const isNoCheckGroup = (!item.refundDone && !item.exchangeDone) && !item.invalidInfo;
             const isNotProofError = !item.proofError;
             return !isAssigned && isNoCheckGroup && isNotProofError;
           } else if (filterType === 'proofError') {
@@ -1731,7 +1773,15 @@
         });
 
         const filterLabel = filterType === 'noCheck' ? '환불/교환 미체크' : '증빙오류(반려)';
+        // 분배/미분배 목록 CSV 다운로드용 데이터 저장
+        const exportAssigned = [];
+        distributionMap.forEach((items, account) => {
+          items.forEach(item => exportAssigned.push({ ...item, _assignedTo: account }));
+        });
+        lastDistributionExportData[filterType] = { assigned: exportAssigned, unassigned: unassigned.slice(), filterLabel };
+
         let html = '<div class="msg info">전체 접수건: ' + allSubmissions.length + '건 | ' + filterLabel + ' 미분배: ' + unassigned.length + '건</div>';
+        html += '<div style="margin-top:8px;"><button type="button" class="btn-download-dist-csv" data-type="' + filterType + '" style="padding:6px 14px; background:#28a745; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:13px;">목록 CSV 다운로드 (분배·미분배)</button></div>';
 
         // 분배 현황 표시 (각 상담원별 분배 건수 및 재분배 버튼)
         if (distributionMap.size > 0) {
@@ -1877,6 +1927,14 @@
             openBulkReassignModal(fromAccount, uncompletedItems, filterType);
           });
         });
+
+        // 목록 CSV 다운로드 버튼
+        if (targetResult) targetResult.querySelectorAll('.btn-download-dist-csv').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const t = btn.getAttribute('data-type');
+            if (t) downloadDistributionListCSV(t);
+          });
+        });
       } catch (err) {
         if (targetResult) targetResult.innerHTML = '<div class="msg error">접수건 조회 실패: ' + escapeHtml(err.message || err) + '</div>';
       } finally {
@@ -1908,7 +1966,7 @@
         
         // 필터 타입에 따라 필터링
         if (filterType === 'noCheck') {
-          const isNoCheckGroup = (!item.refundDone && !item.exchangeDone) || !!item.invalidInfo;
+          const isNoCheckGroup = (!item.refundDone && !item.exchangeDone) && !item.invalidInfo;
           const isNotProofError = !item.proofError;
           return !isAssigned && isNoCheckGroup && isNotProofError;
         } else if (filterType === 'proofError') {
@@ -2561,6 +2619,7 @@
         }
 
         statsResult.innerHTML = html;
+        lastStatsViewMode = 'byDate';
         if (downloadStatsBtn && sortedDates.length > 0) downloadStatsBtn.style.display = 'inline-block';
       } catch (err) {
         statsResult.innerHTML = '<div class="msg error">이력 조회 실패: ' + escapeHtml(err.message || err) + '</div>';
@@ -2758,7 +2817,7 @@
           const isFinalUnreached = ph.length > 0 ? isFinalUnreachedForKey(ph) : false;
           const isPostProcessing = ph.length > 0 ? isPostProcessingForKey(ph) : false;
           const isProofError = !!item.proofError;
-          const isNoCheckGroup = (!item.refundDone && !item.exchangeDone) || !!item.invalidInfo;
+          const isNoCheckGroup = (!item.refundDone && !item.exchangeDone) && !item.invalidInfo;
           
           // 처리 날짜 확인 (유선안내완료 체크한 날짜)
           let processedTimestamp = null;
@@ -3224,8 +3283,8 @@
       csv += '생성일시: ' + new Date().toLocaleString('ko-KR') + '\n';
       csv += '총 건수: ' + assignedItems.length + '건\n\n';
       
-      // CSV 헤더
-      csv += '일자,상담원,접수ID,이름,연락처,프로젝트,유선안내완료,최종미연결,후처리관리중,증빙오류,환불·교환 미체크\n';
+      // CSV 헤더 (유형: 환불·교환 미체크 / 증빙오류 항목별 실적 확인용)
+      csv += '일자,상담원,유형,접수ID,이름,연락처,프로젝트,유선안내완료,최종미연결,후처리관리중\n';
       
       sortedItems.forEach(item => {
         const targetDate = new Date(item._targetTimestamp || 0);
@@ -3233,18 +3292,18 @@
           String(targetDate.getMonth() + 1).padStart(2, '0') + '-' + 
           String(targetDate.getDate()).padStart(2, '0');
         const projectLabel = PROJECT_LABELS[PREFIXES.indexOf(item._prefix)] || item._prefix;
+        const 유형 = item._isProofError ? '증빙오류(반려)' : (item._isNoRefundExchange ? '환불·교환 미체크' : '기타');
         
         csv += '"' + dateStr + '",';
         csv += '"' + (item._account.replace('@ubase.co.kr', '')) + '",';
+        csv += '"' + 유형 + '",';
         csv += '"' + (item.id || '-') + '",';
         csv += '"' + (item.name || '-') + '",';
         csv += '"' + (item.contact || '-') + '",';
         csv += '"' + projectLabel + '",';
         csv += '"' + (item._isCallComplete ? 'Y' : '-') + '",';
         csv += '"' + (item._isFinalUnreached ? 'Y' : '-') + '",';
-        csv += '"' + (item._isPostProcessing ? 'Y' : '-') + '",';
-        csv += '"' + (item._isProofError ? 'Y' : '-') + '",';
-        csv += '"' + (item._isNoRefundExchange ? 'Y' : '-') + '"\n';
+        csv += '"' + (item._isPostProcessing ? 'Y' : '-') + '"\n';
       });
       
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -3252,7 +3311,11 @@
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
       const dateStr = new Date().toISOString().split('T')[0];
-      link.setAttribute('download', '상담원상세관리_' + dateStr + '.csv');
+      const fileStart = (typeof agentDetailStartDate !== 'undefined' && agentDetailStartDate && agentDetailStartDate.value) ? agentDetailStartDate.value : dateStr;
+      const fileEnd = (typeof agentDetailEndDate !== 'undefined' && agentDetailEndDate && agentDetailEndDate.value) ? agentDetailEndDate.value : dateStr;
+      const fileAccount = (typeof agentDetailAccountSelect !== 'undefined' && agentDetailAccountSelect && agentDetailAccountSelect.value) ? agentDetailAccountSelect.value.replace('@ubase.co.kr', '') : '';
+      const fileName = '상담원상세관리_' + fileStart + '_' + fileEnd + (fileAccount ? '_' + fileAccount : '') + '.csv';
+      link.setAttribute('download', fileName);
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
@@ -3449,7 +3512,8 @@
         link.setAttribute('href', url);
         const startDate = statsStartDate.value || '전체';
         const endDate = statsEndDate.value || '전체';
-        link.setAttribute('download', `아웃바운드_실적통계_${startDate}_${endDate}.csv`);
+        const viewLabel = lastStatsViewMode === 'byDate' ? '날짜별상세' : '상담사별요약';
+        link.setAttribute('download', `아웃바운드_실적통계_${viewLabel}_${startDate}_${endDate}.csv`);
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
