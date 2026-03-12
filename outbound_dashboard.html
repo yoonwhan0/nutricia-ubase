@@ -387,7 +387,7 @@
             <option value="cs10@ubase.co.kr">cs10</option>
           </select>
           <button type="button" id="loadPerformanceBtn">조회</button>
-          <button type="button" id="downloadPerformanceBtn" style="background: #28a745; display: none;">CSV</button>
+          <button type="button" id="downloadPerformanceBtn" style="background: #28a745; display: none;">상담원별 통계 엑셀</button>
         </div>
         <div id="performanceLoading" class="loading" style="display: none;">조회 중…</div>
         <div id="performanceResult"></div>
@@ -1678,10 +1678,10 @@
       }
     }
 
-    // 실적 체크 통계 CSV 다운로드
+    // 상담원 상세관리: 상담원별 통계 엑셀/CSV 다운로드
     function downloadPerformanceStatsCSV() {
       if (!performanceStatsData || performanceStatsData.length === 0) {
-        alert('다운로드할 데이터가 없습니다.');
+        alert('다운로드할 데이터가 없습니다. 먼저 조회를 실행해주세요.');
         return;
       }
 
@@ -1689,32 +1689,10 @@
       const startDate = performanceStartDate.value || '전체';
       const endDate = performanceEndDate.value || '전체';
       const accountFilter = performanceAccountSelect.value || '전체';
-
-      let csv = '실적 체크 통계 (통관번호+몰 기준 고객 수)\n';
-      csv += '조회 기간: ' + (useDateFilter ? (startDate + ' ~ ' + endDate) : '전체') + '\n';
-      csv += '상담사 필터: ' + (accountFilter === '전체' ? '전체' : accountFilter.replace('@ubase.co.kr', '')) + '\n';
-      csv += '생성일시: ' + new Date().toLocaleString('ko-KR') + '\n\n';
-      
-      // CSV 헤더: 상담사, 인센티브, 총 고객 수, 몰별 고객 수(4개), 접수건 수, 전환 건수
-      csv += '상담사,최종 인센티브 산정(원),유선안내완료 고객 수(명)';
-      PREFIXES.forEach((prefix, idx) => {
-        csv += ',' + PROJECT_LABELS[idx] + ' 고객 수(명)';
-      });
-      csv += ',유선안내완료 접수건 수(건),환불→교환 전환 건수(건)\n';
-
       const CUSTOMER_INCENTIVE_RATE = 1000;
       const CONVERSION_INCENTIVE_RATE = 2000;
 
-      performanceStatsData.forEach(stat => {
-        const totalIncentive = (stat.completeCustomerCount * CUSTOMER_INCENTIVE_RATE) + (stat.refundToExchangeCount * CONVERSION_INCENTIVE_RATE);
-        csv += stat.account.replace('@ubase.co.kr', '') + ',' + totalIncentive + ',' + stat.completeCustomerCount;
-        PREFIXES.forEach(prefix => {
-          csv += ',' + (stat.completeCustomerCountByPrefix[prefix] || 0);
-        });
-        csv += ',' + stat.completeCount + ',' + stat.refundToExchangeCount + '\n';
-      });
-
-      // 합계
+      // 합계 계산
       const totalCustomers = new Set();
       const totalCustomersByPrefix = {
         'nutricia-x9fQ2kM7-1': new Set(),
@@ -1736,21 +1714,66 @@
         totalRefundToExchange += stat.refundToExchangeCount;
         totalIncentive += (stat.completeCustomerCount * CUSTOMER_INCENTIVE_RATE) + (stat.refundToExchangeCount * CONVERSION_INCENTIVE_RATE);
       });
-      csv += '합계,' + totalIncentive + ',' + totalCustomers.size;
-      PREFIXES.forEach(prefix => {
-        csv += ',' + totalCustomersByPrefix[prefix].size;
-      });
-      csv += ',' + totalCount + ',' + totalRefundToExchange + '\n';
 
-      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', '실적체크통계_' + new Date().toISOString().split('T')[0] + '.csv');
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const headerRow = ['상담사', '최종 인센티브 산정(원)', '유선안내완료 고객 수(명)'];
+      PREFIXES.forEach((prefix, idx) => {
+        headerRow.push(PROJECT_LABELS[idx] + ' 고객 수(명)');
+      });
+      headerRow.push('유선안내완료 접수건 수(건)', '환불→교환 전환 건수(건)');
+
+      const dataRows = [];
+      performanceStatsData.forEach(stat => {
+        const totalIncentive = (stat.completeCustomerCount * CUSTOMER_INCENTIVE_RATE) + (stat.refundToExchangeCount * CONVERSION_INCENTIVE_RATE);
+        const row = [stat.account.replace('@ubase.co.kr', ''), totalIncentive, stat.completeCustomerCount];
+        PREFIXES.forEach(prefix => {
+          row.push(stat.completeCustomerCountByPrefix[prefix] || 0);
+        });
+        row.push(stat.completeCount, stat.refundToExchangeCount);
+        dataRows.push(row);
+      });
+      const sumRow = ['합계', totalIncentive, totalCustomers.size];
+      PREFIXES.forEach(prefix => {
+        sumRow.push(totalCustomersByPrefix[prefix].size);
+      });
+      sumRow.push(totalCount, totalRefundToExchange);
+
+      const dateStr = new Date().toISOString().split('T')[0];
+      const fileBase = '상담원별_통계_' + (useDateFilter ? startDate + '_' + endDate : '전체') + (accountFilter !== '전체' ? '_' + accountFilter.replace('@ubase.co.kr', '') : '') + '_' + dateStr;
+
+      if (typeof XLSX !== 'undefined') {
+        const wb = XLSX.utils.book_new();
+        const wsData = [
+          ['상담원 상세관리 — 상담원별 통계 (통관번호+몰 기준 고객 수)'],
+          ['조회 기간', useDateFilter ? (startDate + ' ~ ' + endDate) : '전체'],
+          ['상담사 필터', accountFilter === '전체' ? '전체' : accountFilter.replace('@ubase.co.kr', '')],
+          ['생성일시', new Date().toLocaleString('ko-KR')],
+          [],
+          headerRow,
+          ...dataRows,
+          sumRow
+        ];
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        XLSX.utils.book_append_sheet(wb, ws, '상담원별 통계');
+        XLSX.writeFile(wb, fileBase + '.xlsx');
+      } else {
+        let csv = '상담원별 통계 (통관번호+몰 기준 고객 수)\n';
+        csv += '조회 기간: ' + (useDateFilter ? (startDate + ' ~ ' + endDate) : '전체') + '\n';
+        csv += '상담사 필터: ' + (accountFilter === '전체' ? '전체' : accountFilter.replace('@ubase.co.kr', '')) + '\n';
+        csv += '생성일시: ' + new Date().toLocaleString('ko-KR') + '\n\n';
+        csv += headerRow.map(h => '"' + String(h).replace(/"/g, '""') + '"').join(',') + '\n';
+        dataRows.forEach(row => {
+          csv += row.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',') + '\n';
+        });
+        csv += sumRow.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',') + '\n';
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.setAttribute('href', URL.createObjectURL(blob));
+        link.setAttribute('download', fileBase + '.csv');
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
     }
 
     // 전체 접수건 조회 (유형별)
@@ -3308,14 +3331,15 @@
         html += '</tbody></table>';
       }
 
-      // CSV 다운로드 버튼
-      html += '<div style="margin-top: 24px;">';
+      // 다운로드 버튼 (상세 CSV + 상담원별 통계 엑셀)
+      html += '<div style="margin-top: 24px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">';
       html += '<button type="button" id="downloadAgentDetailCSVBtn" style="background: #28a745; color: #fff; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">상세 데이터 CSV 다운로드 (총 ' + total + '건)</button>';
+      html += '<button type="button" id="downloadAgentDetailStatsExcelBtn" style="background: #0066cc; color: #fff; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">엑셀 다운로드 (1시트: 일자별 실적 / 2시트: 상담원별 통계)</button>';
       html += '</div>';
 
       agentDetailResult.innerHTML = html;
 
-      // CSV 다운로드 버튼 이벤트
+      // 상세 CSV 다운로드 버튼 이벤트
       const downloadBtn = document.getElementById('downloadAgentDetailCSVBtn');
       if (downloadBtn) {
         downloadBtn.addEventListener('click', () => {
@@ -3326,8 +3350,126 @@
           downloadAgentDetailCSV(assignedItems, filterLabel, rangeLabel, accountLabel);
         });
       }
+      // 상담원별 통계 엑셀 버튼 이벤트 (현재 조회 결과 기준 — 일자별 + 상담원별 2시트)
+      const statsExcelBtn = document.getElementById('downloadAgentDetailStatsExcelBtn');
+      if (statsExcelBtn) {
+        statsExcelBtn.addEventListener('click', () => {
+          const rangeLabel = (agentDetailDateAll && !agentDetailDateAll.checked && agentDetailStartDate && agentDetailEndDate) ? 
+            (agentDetailStartDate.value + ' ~ ' + agentDetailEndDate.value) : '전체';
+          const accountLabel = agentDetailAccountSelect && agentDetailAccountSelect.value ? agentDetailAccountSelect.value.replace('@ubase.co.kr', '') : '전체';
+          downloadAgentDetailStatsExcel(assignedItems, filterLabel, rangeLabel, accountLabel, statsByDate);
+        });
+      }
     }
     
+    // 상담원 상세관리(날짜별 상세) — 조회 결과 기준 엑셀 다운로드 (1시트: 일자별 실적, 2시트: 상담원별 통계)
+    function downloadAgentDetailStatsExcel(assignedItems, filterLabel, rangeLabel, accountLabel, statsByDate) {
+      if (!assignedItems || assignedItems.length === 0) {
+        alert('다운로드할 데이터가 없습니다.');
+        return;
+      }
+      const dateStr = new Date().toISOString().split('T')[0];
+      const fileBase = '상담원_실적_' + (filterLabel || '전체').replace(/[/\s]/g, '') + '_' + (rangeLabel || '전체').replace(/\s/g, '') + '_' + (accountLabel || '전체') + '_' + dateStr;
+
+      // 시트1: 일자별 실적 (기본) — 배정건수(당일), 누적 배정건수, 당일 유선안내완료/최종미연결/후처리, 누적 후처리, 잔여 증빙오류/환불교환 미체크
+      const dateHeaderRow = ['일자', '배정건수(당일)', '누적 배정건수', '당일 유선안내완료 체크 건수', '당일 최종미연결 체크 건수', '당일 후처리 체크 건수', '누적 후처리 체크 건수', '잔여 증빙오류', '잔여 환불교환 미체크'];
+      const dateDataRows = [];
+      if (statsByDate && typeof statsByDate === 'object' && Object.keys(statsByDate).length > 0) {
+        const allDates = Object.keys(statsByDate).sort();
+        let cumulativeAssigned = 0;
+        let cumulativePostProcessing = 0;
+        let cumulativeProofErrorAssigned = 0;
+        let cumulativeProofErrorProcessed = 0;
+        let cumulativeNoRefundExchangeAssigned = 0;
+        let cumulativeNoRefundExchangeProcessed = 0;
+        allDates.forEach(dateKey => {
+          const stat = statsByDate[dateKey] || {};
+          const dailyAssigned = stat.assigned || 0;
+          const dailyCallComplete = stat.callComplete || 0;
+          const dailyFinalUnreached = stat.finalUnreached || 0;
+          const dailyPostProcessing = stat.postProcessing || 0;
+          cumulativeAssigned += dailyAssigned;
+          cumulativePostProcessing += dailyPostProcessing;
+          cumulativeProofErrorAssigned += (stat.proofErrorAssigned || 0);
+          cumulativeProofErrorProcessed += (stat.proofErrorProcessed || 0);
+          cumulativeNoRefundExchangeAssigned += (stat.noRefundExchangeAssigned || 0);
+          cumulativeNoRefundExchangeProcessed += (stat.noRefundExchangeProcessed || 0);
+          const proofErrorRemaining = cumulativeProofErrorAssigned - cumulativeProofErrorProcessed;
+          const noRefundExchangeRemaining = cumulativeNoRefundExchangeAssigned - cumulativeNoRefundExchangeProcessed;
+          const y = dateKey.substring(0, 4), m = dateKey.substring(4, 6), d = dateKey.substring(6, 8);
+          dateDataRows.push([
+            y + '-' + m + '-' + d,
+            dailyAssigned,
+            cumulativeAssigned,
+            dailyCallComplete,
+            dailyFinalUnreached,
+            dailyPostProcessing,
+            cumulativePostProcessing,
+            proofErrorRemaining,
+            noRefundExchangeRemaining
+          ]);
+        });
+      }
+
+      // 시트2: 상담원별 통계
+      const byAccount = new Map();
+      assignedItems.forEach(item => {
+        const acc = item._account || '';
+        if (!byAccount.has(acc)) byAccount.set(acc, { total: 0, complete: 0 });
+        const s = byAccount.get(acc);
+        s.total++;
+        if (item._isCallComplete) s.complete++;
+      });
+      const accountHeaderRow = ['상담사', '분배 건수', '처리완료', '미처리'];
+      const accountDataRows = [];
+      let sumTotal = 0, sumComplete = 0;
+      Array.from(byAccount.entries()).sort((a, b) => (a[0] || '').localeCompare(b[0] || '')).forEach(([account, s]) => {
+        const name = (account || '').replace('@ubase.co.kr', '');
+        accountDataRows.push([name, s.total, s.complete, s.total - s.complete]);
+        sumTotal += s.total;
+        sumComplete += s.complete;
+      });
+      accountDataRows.push(['합계', sumTotal, sumComplete, sumTotal - sumComplete]);
+
+      if (typeof XLSX !== 'undefined') {
+        const wb = XLSX.utils.book_new();
+        const meta = [
+          ['상담사별 실적·분배 이력 — 날짜별 상세 조회 결과'],
+          ['필터', filterLabel],
+          ['조회 기간', rangeLabel],
+          ['상담사', accountLabel],
+          ['생성일시', new Date().toLocaleString('ko-KR')],
+          [],
+          dateHeaderRow
+        ];
+        const ws1 = XLSX.utils.aoa_to_sheet(dateDataRows.length ? meta.concat(dateDataRows) : meta.concat([['(일자별 데이터 없음)']]));
+        XLSX.utils.book_append_sheet(wb, ws1, '일자별 실적');
+        const ws2Data = [
+          ['상담원별 통계'],
+          [],
+          accountHeaderRow,
+          ...accountDataRows
+        ];
+        const ws2 = XLSX.utils.aoa_to_sheet(ws2Data);
+        XLSX.utils.book_append_sheet(wb, ws2, '상담원별 통계');
+        XLSX.writeFile(wb, fileBase + '.xlsx');
+      } else {
+        let csv = '일자별 실적\n필터: ' + filterLabel + '\n조회 기간: ' + rangeLabel + '\n상담사: ' + accountLabel + '\n\n';
+        csv += dateHeaderRow.join(',') + '\n';
+        dateDataRows.forEach(row => csv += row.join(',') + '\n');
+        csv += '\n\n상담원별 통계\n' + accountHeaderRow.join(',') + '\n';
+        accountDataRows.forEach(row => csv += row.join(',') + '\n');
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.setAttribute('href', URL.createObjectURL(blob));
+        link.setAttribute('download', fileBase + '.csv');
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    }
+
     // 상담원 상세 관리 CSV 다운로드
     function downloadAgentDetailCSV(assignedItems, filterLabel, rangeLabel, accountLabel) {
       if (!assignedItems || assignedItems.length === 0) {
