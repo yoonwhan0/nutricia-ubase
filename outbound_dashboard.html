@@ -315,7 +315,7 @@
     <div class="dashboard-section">
       <div class="dashboard-card" style="border-left: 4px solid #17a;">
         <h3 class="card-group-title">환불/교환 미체크 — 조회 및 분배</h3>
-        <p class="hint">환불·교환 모두 미체크 또는 잘못된정보 체크된 접수건을 조회하고 상담사에게 분배합니다. (유선안내완료 처리된 건은 분배 대상에서 제외됩니다)</p>
+        <p class="hint">환불·교환 모두 미체크이거나, 잘못된정보 체크된 접수건을 조회·분배합니다. (증빙오류 반려 건·유선안내완료 건은 분배 대상에서 제외됩니다)</p>
         <div class="toolbar">
           <button type="button" class="load-dist-btn" data-type="noCheck">전체 조회</button>
           <button type="button" class="auto-dist-btn" data-type="noCheck" style="background: #ffc107; color: #333;">자동 균등 분배</button>
@@ -708,10 +708,15 @@
       }
     }
 
-    // 분배/미분배 목록 CSV 다운로드 (재접수 고객 사전 배분 참고용)
+    // 분배/미분배 목록 + 일자별 실적 다운로드 (2시트 xlsx: 시트1 일자별 실적, 시트2 목록)
     function escapeCsvCell(v) {
       const s = (v == null ? '' : String(v)).replace(/"/g, '""');
       return '"' + s + '"';
+    }
+    function toDateStr(ts) {
+      if (ts == null) return '';
+      const d = new Date(typeof ts === 'number' ? ts : Number(ts));
+      return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
     }
     function downloadDistributionListCSV(filterType) {
       const data = lastDistributionExportData[filterType];
@@ -720,31 +725,88 @@
         return;
       }
       const filterLabel = data.filterLabel || (filterType === 'noCheck' ? '환불/교환 미체크' : '증빙오류(반려)');
-      const headers = ['분배여부', '담당상담사', '유형', '접수일시', '이름', '연락처', '접수경로', '접수ID'];
-      let csv = headers.map(h => escapeCsvCell(h)).join(',') + '\n';
-      const pushRow = (item, 분배여부, 담당상담사) => {
-        const projectLabel = PROJECT_LABELS[PREFIXES.indexOf(item._prefix)] || item._prefix;
-        csv += escapeCsvCell(분배여부) + ',';
-        csv += escapeCsvCell(담당상담사) + ',';
-        csv += escapeCsvCell(filterLabel) + ',';
-        csv += escapeCsvCell(formatDate(item.createdAt)) + ',';
-        csv += escapeCsvCell(item.name || '') + ',';
-        csv += escapeCsvCell(item.contact || '') + ',';
-        csv += escapeCsvCell(projectLabel) + ',';
-        csv += escapeCsvCell(item.id || '') + '\n';
-      };
-      data.unassigned.forEach(item => pushRow(item, '미분배', ''));
-      data.assigned.forEach(item => pushRow(item, '분배됨', item._assignedTo || ''));
-      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      link.setAttribute('href', URL.createObjectURL(blob));
       const dateStr = new Date().toISOString().split('T')[0];
       const labelShort = filterType === 'noCheck' ? '환불교환미체크' : '증빙오류';
-      link.setAttribute('download', '아웃바운드_분배목록_' + labelShort + '_' + dateStr + '.csv');
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const baseName = '아웃바운드_분배목록_' + labelShort + '_' + dateStr;
+
+      // 시트1: 일자별 실적 — 배정일(분배한 날짜) 기준·상담사별 (상담원 상세관리와 동일한 일자 개념)
+      const byDateAccount = new Map();
+      (distributionHistoryMap || new Map()).forEach((history, key) => {
+        if (!Array.isArray(history)) return;
+        history.forEach(entry => {
+          if (entry.category !== filterType || !entry.account) return;
+          const dt = toDateStr(entry.timestamp);
+          if (!dt) return;
+          const mapKey = dt + '|' + (entry.account || '').trim();
+          if (!byDateAccount.has(mapKey)) byDateAccount.set(mapKey, new Set());
+          byDateAccount.get(mapKey).add(key);
+        });
+      });
+      const sheet1Rows = [['일자(배정일)', '상담사', '분배 건수', '처리완료', '미처리']];
+      const sortedKeys = Array.from(byDateAccount.keys()).sort((a, b) => {
+        const [dateA, accA] = a.split('|');
+        const [dateB, accB] = b.split('|');
+        if (dateB !== dateA) return dateB.localeCompare(dateA);
+        return (accA || '').localeCompare(accB || '');
+      });
+      sortedKeys.forEach(mapKey => {
+        const [dt, account] = mapKey.split('|');
+        const keys = byDateAccount.get(mapKey) || new Set();
+        const 분배건수 = keys.size;
+        let 처리완료 = 0;
+        keys.forEach(k => {
+          const ph = (processingHistoryMap || new Map()).get(k) || [];
+          if (isCallCompleteForKey(ph)) 처리완료++;
+        });
+        const 미처리 = 분배건수 - 처리완료;
+        sheet1Rows.push([dt, account || '', 분배건수, 처리완료, 미처리]);
+      });
+
+      // 시트2: 분배·미분배 목록
+      const listHeaders = ['분배여부', '담당상담사', '유형', '접수일시', '이름', '연락처', '접수경로', '접수ID'];
+      const sheet2Rows = [listHeaders];
+      const pushListRow = (item, 분배여부, 담당상담사) => {
+        const projectLabel = PROJECT_LABELS[PREFIXES.indexOf(item._prefix)] || item._prefix;
+        sheet2Rows.push([
+          분배여부,
+          담당상담사 || '',
+          filterLabel,
+          formatDate(item.createdAt),
+          item.name || '',
+          item.contact || '',
+          projectLabel,
+          item.id || ''
+        ]);
+      };
+      data.unassigned.forEach(item => pushListRow(item, '미분배', ''));
+      data.assigned.forEach(item => pushListRow(item, '분배됨', item._assignedTo || ''));
+
+      if (typeof XLSX !== 'undefined') {
+        const wb = XLSX.utils.book_new();
+        const ws1 = XLSX.utils.aoa_to_sheet(sheet1Rows);
+        const ws2 = XLSX.utils.aoa_to_sheet(sheet2Rows);
+        XLSX.utils.book_append_sheet(wb, ws1, '일자별 실적');
+        XLSX.utils.book_append_sheet(wb, ws2, '분배·미분배 목록');
+        XLSX.writeFile(wb, baseName + '.xlsx');
+      } else {
+        let csv = listHeaders.map(h => escapeCsvCell(h)).join(',') + '\n';
+        data.unassigned.forEach(item => {
+          const projectLabel = PROJECT_LABELS[PREFIXES.indexOf(item._prefix)] || item._prefix;
+          csv += [escapeCsvCell('미분배'), escapeCsvCell(''), escapeCsvCell(filterLabel), escapeCsvCell(formatDate(item.createdAt)), escapeCsvCell(item.name || ''), escapeCsvCell(item.contact || ''), escapeCsvCell(projectLabel), escapeCsvCell(item.id || '')].join(',') + '\n';
+        });
+        data.assigned.forEach(item => {
+          const projectLabel = PROJECT_LABELS[PREFIXES.indexOf(item._prefix)] || item._prefix;
+          csv += [escapeCsvCell('분배됨'), escapeCsvCell(item._assignedTo || ''), escapeCsvCell(filterLabel), escapeCsvCell(formatDate(item.createdAt)), escapeCsvCell(item.name || ''), escapeCsvCell(item.contact || ''), escapeCsvCell(projectLabel), escapeCsvCell(item.id || '')].join(',') + '\n';
+        });
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.setAttribute('href', URL.createObjectURL(blob));
+        link.setAttribute('download', baseName + '.csv');
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
     }
 
     // 계정별 회수: 해당 상담사에게 배정된 건 중 미처리 건만 회수 (처리완료 건은 그대로 유지)
@@ -1761,8 +1823,8 @@
           
           // 필터 타입에 따라 필터링
           if (filterType === 'noCheck') {
-            // 환불·교환 모두 미체크 AND 잘못된정보 미체크 (잘못된정보 체크 건은 분배 제외). 증빙오류 아님.
-            const isNoCheckGroup = (!item.refundDone && !item.exchangeDone) && !item.invalidInfo;
+            // 분배 규칙: (환불 미체크 AND 교환 미체크) OR 잘못된정보 체크. 증빙오류 아님.
+            const isNoCheckGroup = (!item.refundDone && !item.exchangeDone) || !!(item.invalidInfo === true || item.invalidInfo === 'true');
             const isNotProofError = !item.proofError;
             return !isAssigned && isNoCheckGroup && isNotProofError;
           } else if (filterType === 'proofError') {
@@ -1780,8 +1842,11 @@
         });
         lastDistributionExportData[filterType] = { assigned: exportAssigned, unassigned: unassigned.slice(), filterLabel };
 
-        let html = '<div class="msg info">전체 접수건: ' + allSubmissions.length + '건 | ' + filterLabel + ' 미분배: ' + unassigned.length + '건</div>';
-        html += '<div style="margin-top:8px;"><button type="button" class="btn-download-dist-csv" data-type="' + filterType + '" style="padding:6px 14px; background:#28a745; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:13px;">목록 CSV 다운로드 (분배·미분배)</button></div>';
+        const unassignedCriteria = filterType === 'noCheck'
+          ? ' (미분배 = (환불·교환 미체크 또는 잘못된정보 체크) + 증빙오류 아님 + 분배 이력 없음 + 유선안내완료 아님)'
+          : ' (미분배 = 증빙오류 반려 + 분배 이력 없음 + 유선안내완료 아님)';
+        let html = '<div class="msg info">전체 접수건: ' + allSubmissions.length + '건 | ' + filterLabel + ' 미분배: ' + unassigned.length + '건' + unassignedCriteria + '</div>';
+        html += '<div style="margin-top:8px;"><button type="button" class="btn-download-dist-csv" data-type="' + filterType + '" style="padding:6px 14px; background:#28a745; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:13px;">엑셀 다운로드 (1시트: 일자별 실적 / 2시트: 분배·미분배 목록)</button></div>';
 
         // 분배 현황 표시 (각 상담원별 분배 건수 및 재분배 버튼)
         if (distributionMap.size > 0) {
@@ -1966,7 +2031,7 @@
         
         // 필터 타입에 따라 필터링
         if (filterType === 'noCheck') {
-          const isNoCheckGroup = (!item.refundDone && !item.exchangeDone) && !item.invalidInfo;
+          const isNoCheckGroup = (!item.refundDone && !item.exchangeDone) || !!(item.invalidInfo === true || item.invalidInfo === 'true');
           const isNotProofError = !item.proofError;
           return !isAssigned && isNoCheckGroup && isNotProofError;
         } else if (filterType === 'proofError') {
@@ -2817,7 +2882,7 @@
           const isFinalUnreached = ph.length > 0 ? isFinalUnreachedForKey(ph) : false;
           const isPostProcessing = ph.length > 0 ? isPostProcessingForKey(ph) : false;
           const isProofError = !!item.proofError;
-          const isNoCheckGroup = (!item.refundDone && !item.exchangeDone) && !item.invalidInfo;
+          const isNoCheckGroup = (!item.refundDone && !item.exchangeDone) || !!(item.invalidInfo === true || item.invalidInfo === 'true');
           
           // 처리 날짜 확인 (유선안내완료 체크한 날짜)
           let processedTimestamp = null;
@@ -3521,5 +3586,6 @@
       });
     }
   </script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 </body>
 </html>
