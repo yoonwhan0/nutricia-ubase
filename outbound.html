@@ -1195,15 +1195,19 @@
       }
     }
 
-    // 상담이력 추가 — 통관번호 기준 (동일 통관번호면 몰 달라도 공유)
-    async function addCounselingHistoryByCustoms(normalizedCustoms, content) {
+    // 상담이력 추가 — 통관번호 기준 (동일 통관번호면 몰 달라도 공유). optionalTimestamp: 통관+연락처 둘 다 쓸 때 같은 값 넘겨서 중복 표시 방지
+    async function addCounselingHistoryByCustoms(normalizedCustoms, content, optionalTimestamp) {
       if (!db || !currentUserEmail || !content || !content.trim() || !normalizedCustoms) return;
       try {
+        const ts = optionalTimestamp != null ? optionalTimestamp : Date.now();
         const ref = dbRef(db, COUNSELING_HISTORY_BY_CUSTOMS_PATH + '/' + normalizedCustoms);
-        await push(ref, { account: currentUserEmail, timestamp: Date.now(), content: content.trim() });
+        await push(ref, { account: currentUserEmail, timestamp: ts, content: content.trim() });
       } catch (err) {
         console.error('통관번호 기준 상담이력 저장 오류:', err);
-        throw err;
+        const isPermissionDenied = (err && (err.code === 'PERMISSION_DENIED' || err.message && err.message.includes('Permission denied')));
+        const wrapped = new Error(isPermissionDenied ? '상담이력 저장 권한이 없습니다. Firebase 콘솔 → Realtime Database → 규칙에서 counseling_history_by_customs 경로에 읽기/쓰기 규칙을 추가한 뒤 게시해 주세요.' : (err.message || '저장 실패'));
+        if (isPermissionDenied) wrapped.code = 'PERMISSION_DENIED';
+        throw wrapped;
       }
     }
 
@@ -1227,14 +1231,18 @@
       }
     }
 
-    async function addCounselingHistoryByContact(normalizedPhone, content) {
+    async function addCounselingHistoryByContact(normalizedPhone, content, optionalTimestamp) {
       if (!db || !currentUserEmail || !content || !content.trim() || !normalizedPhone) return;
       try {
+        const ts = optionalTimestamp != null ? optionalTimestamp : Date.now();
         const ref = dbRef(db, COUNSELING_HISTORY_BY_CONTACT_PATH + '/' + normalizedPhone);
-        await push(ref, { account: currentUserEmail, timestamp: Date.now(), content: content.trim() });
+        await push(ref, { account: currentUserEmail, timestamp: ts, content: content.trim() });
       } catch (err) {
         console.error('고객별 상담이력 저장 오류:', err);
-        throw err;
+        const isPermissionDenied = (err && (err.code === 'PERMISSION_DENIED' || err.message && err.message.includes('Permission denied')));
+        const wrapped = new Error(isPermissionDenied ? '상담이력 저장 권한이 없습니다. Firebase 콘솔 → Realtime Database → 규칙에서 counseling_history_by_contact 경로에 읽기/쓰기 규칙을 추가한 뒤 게시해 주세요.' : (err.message || '저장 실패'));
+        if (isPermissionDenied) wrapped.code = 'PERMISSION_DENIED';
+        throw wrapped;
       }
     }
 
@@ -1313,8 +1321,13 @@
         const existingHistory = await loadCounselingHistory(id, dateKey, prefix);
         const newHistoryItem = { account: currentUserEmail, timestamp: Date.now(), content: content.trim() };
         const updatedHistory = [...existingHistory, newHistoryItem].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        await update(dbRef(db, subPath), { counselingHistory: updatedHistory });
-        if (metaPath) await update(dbRef(db, metaPath), { counselingHistory: updatedHistory });
+        const historyPayload = { counselingHistory: updatedHistory };
+        const subRef = dbRef(db, subPath);
+        await update(subRef, historyPayload);
+        if (metaPath) {
+          const metaRef = dbRef(db, metaPath);
+          await update(metaRef, historyPayload);
+        }
       } catch (err) {
         console.error('상담이력 저장 오류:', err);
         throw err;
@@ -1582,8 +1595,9 @@
         try {
           const customsKey = canonicalCustomsKey(getCustomsCodeFromItem(d));
           const contactKey = canonicalPhoneKeyForHistory(d.contact || '');
-          if (customsKey) await addCounselingHistoryByCustoms(customsKey, counselingContent);
-          if (contactKey) await addCounselingHistoryByContact(contactKey, counselingContent);
+          const oneTs = Date.now();
+          if (customsKey) await addCounselingHistoryByCustoms(customsKey, counselingContent, oneTs);
+          if (contactKey) await addCounselingHistoryByContact(contactKey, counselingContent, oneTs);
           if (!customsKey && !contactKey) await addCounselingHistoryToFirebase(id, dateKey, prefix, counselingContent, isLegacy);
           await addProcessingHistory(id, dateKey, prefix, '상담이력 기재');
           await loadProcessingHistoryFromFirebase();
@@ -2149,8 +2163,9 @@
 
           const customsKey = canonicalCustomsKey(getCustomsCodeFromItem(d));
           const contactKey = canonicalPhoneKeyForHistory(d.contact || '');
-          if (customsKey) await addCounselingHistoryByCustoms(customsKey, content);
-          if (contactKey) await addCounselingHistoryByContact(contactKey, content);
+          const oneTs = Date.now();
+          if (customsKey) await addCounselingHistoryByCustoms(customsKey, content, oneTs);
+          if (contactKey) await addCounselingHistoryByContact(contactKey, content, oneTs);
           if (!customsKey && !contactKey) await addCounselingHistoryToFirebase(id, dateKey, prefix, content, !!d._isLegacy);
           await addProcessingHistory(id, dateKey, prefix, '상담이력 기재');
 
