@@ -726,6 +726,14 @@
     function normalizePhone(v) {
       return (v || '').replace(/\D/g, '');
     }
+    // 고객별 상담이력 저장/조회 시 동일 키 보장 (82/010 혼용 시에도 같은 키로)
+    function canonicalPhoneKeyForHistory(contact) {
+      const digits = normalizePhone(contact);
+      if (!digits) return '';
+      if (digits.length >= 11 && digits.startsWith('82')) return '0' + digits.slice(2);
+      if (digits.length === 10 && digits.startsWith('10')) return '0' + digits;
+      return digits;
+    }
     function contactMatches(storedContact, searchContact) {
       const s = normalizePhone(storedContact);
       const q = normalizePhone(searchContact);
@@ -1059,7 +1067,7 @@
         let ok = true;
         if (nameKeyword) ok = ok && (d.name || '').toLowerCase().includes(nameKeyword);
         if (contactKeyword) ok = ok && contactMatches(d.contact, searchFilters.contact);
-        if (customsKeyword) ok = ok && (d.customsCode || '').toUpperCase().includes(customsKeyword);
+        if (customsKeyword) ok = ok && (getCustomsCodeFromItem(d) || '').toUpperCase().includes(customsKeyword);
         if (uniqueCodeKeyword) {
           const u = getUniqueCodesArray(d);
           const hasMatchingCode = u.some((uc) => {
@@ -1153,7 +1161,150 @@
       }
     }
 
-    // 상담이력 추가 (Firebase submissions/submissions_meta에 저장)
+    // 고객별 상담이력 공유 경로 — 통관번호 기준 (몰 달라도 동일 통관번호면 이력 공유)
+    const COUNSELING_HISTORY_BY_CUSTOMS_PATH = 'counseling_history_by_customs';
+    const COUNSELING_HISTORY_BY_CONTACT_PATH = 'counseling_history_by_contact';
+
+    // 통관번호 정규화 (저장/조회 키 통일, Firebase 키 불가 문자 치환). 몰마다 필드명 다를 수 있음.
+    function getCustomsCodeFromItem(d) {
+      if (!d) return '';
+      return (d.customsCode || d.customs_code || d.customs || d.개인통관부호 || '').trim();
+    }
+    function canonicalCustomsKey(customsCode) {
+      const s = String(customsCode || '').trim().replace(/\s+/g, '').toUpperCase();
+      return s.replace(/[.#$\[\]/]/g, '_') || '';
+    }
+
+    // 상담이력 로드 — 통관번호 기준 (고객별 공유)
+    async function loadCounselingHistoryByCustoms(normalizedCustoms) {
+      if (!db || !normalizedCustoms) return [];
+      try {
+        const snap = await get(dbRef(db, COUNSELING_HISTORY_BY_CUSTOMS_PATH + '/' + normalizedCustoms));
+        if (!snap.exists()) return [];
+        const val = snap.val();
+        if (!val || typeof val !== 'object') return [];
+        const arr = [];
+        Object.keys(val).forEach((k) => {
+          const item = val[k];
+          if (item && (item.account != null || item.content != null)) arr.push({ account: item.account || '', timestamp: item.timestamp || 0, content: String(item.content || '') });
+        });
+        return arr.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      } catch (err) {
+        console.error('통관번호 기준 상담이력 로드 오류:', err);
+        return [];
+      }
+    }
+
+    // 상담이력 추가 — 통관번호 기준 (동일 통관번호면 몰 달라도 공유)
+    async function addCounselingHistoryByCustoms(normalizedCustoms, content) {
+      if (!db || !currentUserEmail || !content || !content.trim() || !normalizedCustoms) return;
+      try {
+        const ref = dbRef(db, COUNSELING_HISTORY_BY_CUSTOMS_PATH + '/' + normalizedCustoms);
+        await push(ref, { account: currentUserEmail, timestamp: Date.now(), content: content.trim() });
+      } catch (err) {
+        console.error('통관번호 기준 상담이력 저장 오류:', err);
+        throw err;
+      }
+    }
+
+    // 상담이력 로드 — 연락처 기준 (통관번호 없을 때 폴백)
+    async function loadCounselingHistoryByContact(normalizedPhone) {
+      if (!db || !normalizedPhone) return [];
+      try {
+        const snap = await get(dbRef(db, COUNSELING_HISTORY_BY_CONTACT_PATH + '/' + normalizedPhone));
+        if (!snap.exists()) return [];
+        const val = snap.val();
+        if (!val || typeof val !== 'object') return [];
+        const arr = [];
+        Object.keys(val).forEach((k) => {
+          const item = val[k];
+          if (item && (item.account != null || item.content != null)) arr.push({ account: item.account || '', timestamp: item.timestamp || 0, content: String(item.content || '') });
+        });
+        return arr.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      } catch (err) {
+        console.error('고객별 상담이력 로드 오류:', err);
+        return [];
+      }
+    }
+
+    async function addCounselingHistoryByContact(normalizedPhone, content) {
+      if (!db || !currentUserEmail || !content || !content.trim() || !normalizedPhone) return;
+      try {
+        const ref = dbRef(db, COUNSELING_HISTORY_BY_CONTACT_PATH + '/' + normalizedPhone);
+        await push(ref, { account: currentUserEmail, timestamp: Date.now(), content: content.trim() });
+      } catch (err) {
+        console.error('고객별 상담이력 저장 오류:', err);
+        throw err;
+      }
+    }
+
+    // 상담이력 로드 — 통관번호·연락처 둘 다 조회 후 병합 (몰 달라도 동일 고객이면 보이도록)
+    async function loadCounselingHistoryForDisplay(d) {
+      const customsKey = d ? canonicalCustomsKey(getCustomsCodeFromItem(d)) : '';
+      const contactKey = d ? canonicalPhoneKeyForHistory(d.contact || '') : '';
+      const rawKey = d ? normalizePhone(d.contact || '') : '';
+      let byShared = [];
+      if (customsKey) byShared = await loadCounselingHistoryByCustoms(customsKey);
+      if (contactKey) {
+        const byContact = await loadCounselingHistoryByContact(contactKey);
+        const seenTs = new Set(byShared.map((h) => h.timestamp));
+        byContact.forEach((h) => { if (!seenTs.has(h.timestamp)) { seenTs.add(h.timestamp); byShared.push(h); } });
+        if (rawKey && rawKey !== contactKey) {
+          const alt = await loadCounselingHistoryByContact(rawKey);
+          alt.forEach((h) => { if (!seenTs.has(h.timestamp)) { seenTs.add(h.timestamp); byShared.push(h); } });
+        }
+        byShared.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      }
+      // 연락처만 있고 통관번호 없어도, 같은 연락처인 다른 몰 접수건의 통관번호로 저장된 이력 조회 (이베 반려 후 다른몰 재등록 케이스)
+      if (d && Array.isArray(allItems) && !customsKey && contactKey) {
+        const sameContactItems = allItems.filter((it) => canonicalPhoneKeyForHistory(it.contact || '') === contactKey || normalizePhone(it.contact || '') === rawKey);
+        const customsKeysSeen = new Set();
+        for (const it of sameContactItems) {
+          const ck = canonicalCustomsKey(getCustomsCodeFromItem(it));
+          if (ck && !customsKeysSeen.has(ck)) {
+            customsKeysSeen.add(ck);
+            const hist = await loadCounselingHistoryByCustoms(ck);
+            const seenTs = new Set(byShared.map((h) => h.timestamp));
+            hist.forEach((h) => { if (!seenTs.has(h.timestamp)) { seenTs.add(h.timestamp); byShared.push(h); } });
+          }
+        }
+        byShared.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      }
+      byShared = byShared.map((h) => ({ ...h, _originLabel: '고객 공유 이력' }));
+      const bySubmission = d ? await loadCounselingHistory(d.id, d._dateKey || '', d._prefix || '') : [];
+      const bySubmissionTagged = bySubmission.map((h) => ({
+        ...h,
+        _originLabel: d._globalSeq != null ? '순번 ' + d._globalSeq + ' (현재 접수건)' : '현재 접수건',
+        _originSeq: d._globalSeq
+      }));
+      // 같은 통관번호 또는 같은 연락처 다른 접수건에 건별로만 저장된 이력 수집
+      let bySameCustomerSubmissions = [];
+      if (d && Array.isArray(allItems)) {
+        const sameCustomerItems = allItems.filter((it) => {
+          if (it.id === d.id && (it._dateKey || '') === (d._dateKey || '') && it._prefix === d._prefix) return false;
+          if (customsKey && canonicalCustomsKey(getCustomsCodeFromItem(it)) === customsKey) return true;
+          if (contactKey && (canonicalPhoneKeyForHistory(it.contact || '') === contactKey || normalizePhone(it.contact || '') === rawKey)) return true;
+          return false;
+        });
+        for (const it of sameCustomerItems) {
+          const subHist = await loadCounselingHistory(it.id, it._dateKey || '', it._prefix || '');
+          const mallName = PROJECT_LABELS[(it._projectIndex || 1) - 1] || it._prefix || '';
+          const originLabel = (it._globalSeq != null ? '순번 ' + it._globalSeq + ' ' : '') + (mallName ? mallName + ' ' : '') + '접수건';
+          subHist.forEach((h) => bySameCustomerSubmissions.push({ ...h, _originLabel: originLabel.trim(), _originSeq: it._globalSeq }));
+        }
+      }
+      const seen = new Set();
+      const merged = [];
+      [...byShared, ...bySubmissionTagged, ...bySameCustomerSubmissions].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).forEach((h) => {
+        const key = (h.timestamp || 0) + '|' + (h.account || '') + '|' + (h.content || '').slice(0, 50);
+        if (seen.has(key)) return;
+        seen.add(key);
+        merged.push(h);
+      });
+      return merged;
+    }
+
+    // 상담이력 추가 (Firebase submissions/submissions_meta에 저장) — 연락처 없을 때만 사용
     async function addCounselingHistoryToFirebase(id, dateKey, prefix, content, isLegacy) {
       if (!db || !currentUserEmail || !content || !content.trim()) return;
       const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
@@ -1170,7 +1321,7 @@
       }
     }
 
-    // 상담이력 로드 함수 (Firebase submissions_meta에서 로드)
+    // 상담이력 로드 함수 (Firebase submissions_meta에서 로드 — 건별, 연락처 없을 때 또는 병합용)
     async function loadCounselingHistory(id, dateKey, prefix) {
       if (!db) return [];
       const metaPath = prefix + '/submissions_meta/' + dateKey + '/' + id;
@@ -1355,8 +1506,8 @@
         '<strong>연락처:</strong> ' + escapeHtml(d.contact || '-') + ' | ' +
         '<strong>접수ID:</strong> ' + escapeHtml(d.id || '-');
       
-      // 기존 상담이력 로드 및 표시
-      await refreshCounselingHistoryList(d.id, d._dateKey || '', d._prefix || '');
+      // 기존 상담이력 로드 및 표시 (고객별 공유 + 건별 병합)
+      await refreshCounselingHistoryList(d);
       
       // 새 입력은 빈 텍스트 영역
       textareaEl.value = '';
@@ -1368,9 +1519,9 @@
       attachCounselingModalListeners(d);
     }
 
-    async function refreshCounselingHistoryList(id, dateKey, prefix) {
+    async function refreshCounselingHistoryList(d) {
       const historyListEl = document.getElementById('counselingModalHistoryList');
-      const history = await loadCounselingHistory(id, dateKey, prefix);
+      const history = d ? await loadCounselingHistoryForDisplay(d) : [];
       
       if (history.length === 0) {
         historyListEl.innerHTML = '';
@@ -1378,11 +1529,12 @@
       }
       
       let historyHtml = '<div style="padding: 12px; background: #f9f9f9; border-radius: 6px; max-height: 200px; overflow-y: auto;">';
-      historyHtml += '<h4 style="margin: 0 0 8px 0; font-size: 13px; color: #333;">기존 상담이력 (' + history.length + '건)</h4>';
+      historyHtml += '<h4 style="margin: 0 0 8px 0; font-size: 13px; color: #333;">기존 상담이력 (' + history.length + '건) <span style="font-weight:normal;color:#666;font-size:11px;">· 동일 통관번호(몰 달라도) 공유</span></h4>';
       history.forEach((h, idx) => {
         historyHtml += '<div style="margin-bottom: 8px; padding: 8px; background: #fff; border-radius: 4px; border-left: 3px solid #2b3c90;">';
         historyHtml += '<div style="font-size: 11px; color: #666; margin-bottom: 4px;">';
         historyHtml += '<strong>' + formatDate(h.timestamp) + '</strong> - ' + escapeHtml(h.account);
+        if (h._originLabel) historyHtml += ' <span style="margin-left:6px;font-size:10px;color:#888;background:#eee;padding:2px 6px;border-radius:4px;">' + escapeHtml(h._originLabel) + '</span>';
         historyHtml += '</div>';
         historyHtml += '<div style="font-size: 13px; color: #333; white-space: pre-wrap;">' + escapeHtml(h.content) + '</div>';
         historyHtml += '</div>';
@@ -1428,14 +1580,18 @@
         if (!isLegacy && !dateKey) return;
         
         try {
-          await addCounselingHistoryToFirebase(id, dateKey, prefix, counselingContent, isLegacy);
+          const customsKey = canonicalCustomsKey(getCustomsCodeFromItem(d));
+          const contactKey = canonicalPhoneKeyForHistory(d.contact || '');
+          if (customsKey) await addCounselingHistoryByCustoms(customsKey, counselingContent);
+          if (contactKey) await addCounselingHistoryByContact(contactKey, counselingContent);
+          if (!customsKey && !contactKey) await addCounselingHistoryToFirebase(id, dateKey, prefix, counselingContent, isLegacy);
           await addProcessingHistory(id, dateKey, prefix, '상담이력 기재');
           await loadProcessingHistoryFromFirebase();
-          alert('상담이력이 저장되었습니다.');
+          alert('상담이력이 저장되었습니다.' + (customsKey || contactKey ? ' (통관번호/연락처 기준·몰 관계없이 공유)' : ''));
           closeCounselingModal();
           renderTable();
           textareaEl.value = '';
-          await refreshCounselingHistoryList(id, dateKey, prefix);
+          await refreshCounselingHistoryList(d);
           textareaEl.focus();
         } catch (err) {
           console.error('저장 오류:', err);
@@ -1476,7 +1632,7 @@
       infoHtml += '<div class="info-row"><strong>이름</strong> <input type="text" id="dm-customer-name" class="dm-customer-field" value="' + escapeAttr(d.name || '') + '" placeholder="이름" style="width:100%;padding:4px;font-size:13px;"></div>';
       infoHtml += '<div class="info-row"><strong>연락처</strong> <input type="text" id="dm-customer-contact" class="dm-customer-field" value="' + escapeAttr(d.contact || '') + '" placeholder="연락처" style="width:100%;padding:4px;font-size:13px;"></div>';
       infoHtml += '<div class="info-row"><strong>주소</strong> <input type="text" id="dm-customer-address" class="dm-customer-field" value="' + escapeAttr((d.address || '') + (d.addressDetail ? ' ' + d.addressDetail : '')) + '" placeholder="주소" style="width:100%;padding:4px;font-size:13px;"></div>';
-      infoHtml += '<div class="info-row"><strong>개인통관부호</strong> <input type="text" id="dm-customer-customs" class="dm-customer-field" value="' + escapeAttr(d.customsCode || '') + '" placeholder="개인통관부호" style="width:100%;padding:4px;font-size:13px;"></div>';
+      infoHtml += '<div class="info-row"><strong>개인통관부호</strong> <input type="text" id="dm-customer-customs" class="dm-customer-field" value="' + escapeAttr(getCustomsCodeFromItem(d) || '') + '" placeholder="개인통관부호" style="width:100%;padding:4px;font-size:13px;"></div>';
       infoHtml += '<div class="info-row"><strong>은행</strong> <input type="text" id="dm-customer-bank" class="dm-customer-field" value="' + escapeAttr(d.bankName || '') + '" placeholder="은행" style="width:100%;padding:4px;font-size:13px;"></div>';
       infoHtml += '<div class="info-row"><strong>계좌번호</strong> <input type="text" id="dm-customer-account" class="dm-customer-field" value="' + escapeAttr(d.bankAccountNumber || '') + '" placeholder="계좌번호" style="width:100%;padding:4px;font-size:13px;"></div>';
       infoHtml += '<div class="info-row"><strong>계좌명</strong> <input type="text" id="dm-customer-account-name" class="dm-customer-field" value="' + escapeAttr(d.bankAccountName || '') + '" placeholder="계좌명" style="width:100%;padding:4px;font-size:13px;"></div>';
@@ -1529,7 +1685,7 @@
       d._effectiveCallComplete = effectiveCallComplete;
       d._effectiveFinalUnreached = effectiveFinalUnreached;
       d._effectivePostProcessing = effectivePostProcessing;
-      const counselingHistory = await loadCounselingHistory(d.id, d._dateKey || '', d._prefix || '');
+      const counselingHistory = await loadCounselingHistoryForDisplay(d);
 
       let statusReadonly = [];
       if (d.refundComplete) statusReadonly.push('환불완료');
@@ -1541,7 +1697,10 @@
       let counselingHtml = '<div class="counseling-history-list" id="dm-counseling-history-list">';
       if (counselingHistory.length > 0) {
         counselingHistory.forEach((h) => {
-          counselingHtml += '<div class="counseling-history-item"><strong>' + formatDate(h.timestamp) + '</strong> ' + escapeHtml(h.account) + '<br>' + escapeHtml(h.content) + '</div>';
+          counselingHtml += '<div class="counseling-history-item">';
+          counselingHtml += '<div style="font-size:11px;color:#666;margin-bottom:4px;"><strong>' + formatDate(h.timestamp) + '</strong> ' + escapeHtml(h.account);
+          if (h._originLabel) counselingHtml += ' <span style="margin-left:6px;font-size:10px;color:#888;background:#eee;padding:2px 6px;border-radius:4px;">' + escapeHtml(h._originLabel) + '</span>';
+          counselingHtml += '</div><div style="font-size:13px;white-space:pre-wrap;">' + escapeHtml(h.content) + '</div></div>';
         });
       } else {
         counselingHtml += '<div style="font-size:12px;color:#999;">등록된 상담이력이 없습니다.</div>';
@@ -1572,7 +1731,7 @@
         '<button type="button" id="dm-apply-flags-btn" class="btn btn-primary" style="margin-top:12px;">적용</button>' +
         statusReadonlyHtml +
         proofErrorReasonHtml +
-        '<h3 style="margin-top: 16px;">상담이력</h3>' +
+        '<h3 style="margin-top: 16px;">상담이력 <span style="font-weight:normal;font-size:11px;color:#666;">(동일 통관번호·몰 달라도 공유)</span></h3>' +
         counselingHtml +
         '<textarea id="dm-counseling-history" placeholder="새 상담이력을 입력하세요."></textarea>' +
         '<button type="button" class="btn btn-primary" id="dm-save-history-btn" style="width: auto; margin-top: 8px;">상담이력 저장</button>' +
@@ -1822,7 +1981,7 @@
           contact: d.contact || '',
           address: d.address || '',
           addressDetail: d.addressDetail || '',
-          customsCode: d.customsCode || '',
+          customsCode: getCustomsCodeFromItem(d) || '',
           bankName: d.bankName || '',
           bankAccountNumber: d.bankAccountNumber || '',
           bankAccountName: d.bankAccountName || ''
@@ -1988,16 +2147,23 @@
           if (!id || !prefix) return;
           if (!d._isLegacy && !dateKey) return;
 
-          await addCounselingHistoryToFirebase(id, dateKey, prefix, content, !!d._isLegacy);
+          const customsKey = canonicalCustomsKey(getCustomsCodeFromItem(d));
+          const contactKey = canonicalPhoneKeyForHistory(d.contact || '');
+          if (customsKey) await addCounselingHistoryByCustoms(customsKey, content);
+          if (contactKey) await addCounselingHistoryByContact(contactKey, content);
+          if (!customsKey && !contactKey) await addCounselingHistoryToFirebase(id, dateKey, prefix, content, !!d._isLegacy);
           await addProcessingHistory(id, dateKey, prefix, '상담이력 기재');
 
           const listEl = document.getElementById('dm-counseling-history-list');
           if (listEl) {
-            const history = await loadCounselingHistory(id, dateKey, prefix);
+            const history = await loadCounselingHistoryForDisplay(d);
             let html = '';
             if (history.length > 0) {
               history.forEach((h) => {
-                html += '<div class="counseling-history-item"><strong>' + formatDate(h.timestamp) + '</strong> ' + escapeHtml(h.account) + '<br>' + escapeHtml(h.content) + '</div>';
+                html += '<div class="counseling-history-item">';
+                html += '<div style="font-size:11px;color:#666;margin-bottom:4px;"><strong>' + formatDate(h.timestamp) + '</strong> ' + escapeHtml(h.account);
+                if (h._originLabel) html += ' <span style="margin-left:6px;font-size:10px;color:#888;background:#eee;padding:2px 6px;border-radius:4px;">' + escapeHtml(h._originLabel) + '</span>';
+                html += '</div><div style="font-size:13px;white-space:pre-wrap;">' + escapeHtml(h.content) + '</div></div>';
               });
             } else {
               html = '<div style="font-size:12px;color:#999;">등록된 상담이력이 없습니다.</div>';
