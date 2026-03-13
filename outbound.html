@@ -709,15 +709,13 @@
       return map;
     }
 
-    // 본인이 안내 완료한 고객(연락처)이 그 이후에 재접수한 건만 반환. 이미 유선안내완료한 건은 제외(목록에서 사라짐)
+    // 본인이 안내 완료한 고객(연락처)의 미완료 접수건 반환. 유선안내 체크 전에 새로 등록한 건도 포함. 이미 유선안내완료한 건은 제외(목록에서 사라짐)
     function getMyResubmissionItems() {
       const contactMap = buildContactToCallCompleteMapForCurrentUser();
       return allItems.filter((d) => {
         const norm = normalizePhone(d.contact);
         if (!norm) return false;
-        const completedAt = contactMap.get(norm);
-        if (completedAt == null) return false;
-        if ((d.createdAt || 0) <= completedAt) return false;
+        if (!contactMap.has(norm)) return false;
         const key = `${d._prefix}_${d._dateKey || ''}_${d.id}`;
         const ph = processingHistoryMap.get(key) || [];
         if (ph.length > 0 ? isCallCompleteForKey(ph) : !!d.callComplete) return false;
