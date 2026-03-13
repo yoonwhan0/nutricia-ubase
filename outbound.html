@@ -2051,8 +2051,12 @@
         // (환불완료/교환완료 건도 수정 가능)
         
         try {
-          await update(dbRef(db, subPath), newValues);
-          if (metaPath) await update(dbRef(db, metaPath), newValues);
+          const subRef = dbRef(db, subPath);
+          await update(subRef, newValues);
+          if (metaPath) {
+            const metaRef = dbRef(db, metaPath);
+            await update(metaRef, newValues);
+          }
           
           if (changes.length > 0) {
             await addProcessingHistory(id, dateKey, prefix, changes.join(', '));
@@ -2114,8 +2118,13 @@
           const subPath = isLegacy ? prefix + '/submissions/' + id : prefix + '/submissions/' + dateKey + '/' + id;
           const metaPath = dateKey ? (prefix + '/submissions_meta/' + dateKey + '/' + id) : '';
           try {
-            await update(dbRef(db, subPath), { uniqueCodesData: updated });
-            if (metaPath) await update(dbRef(db, metaPath), { uniqueCodesData: updated });
+            const payload = { uniqueCodesData: updated };
+            const subRef = dbRef(db, subPath);
+            await update(subRef, payload);
+            if (metaPath) {
+              const metaRef = dbRef(db, metaPath);
+              await update(metaRef, payload);
+            }
             const it = allItems.find((i) => String(i.id) === String(id) && (i._dateKey || '') === dateKey && i._prefix === prefix);
             if (it) it.uniqueCodesData = updated;
             await addProcessingHistory(id, dateKey, prefix, '고유번호·제조번호 재등록');
